@@ -18,7 +18,7 @@ export class RegistryPackage {
 
 export class RegistryClient {
   constructor(
-    private readonly registryUrl: string = process.env['LECTERN_REGISTRY'] ?? 'https://packages.inklang.org'
+    public readonly registryUrl: string = process.env['LECTERN_REGISTRY'] ?? 'https://packages.inklang.org'
   ) {}
 
   async fetchIndex(): Promise<object> {
