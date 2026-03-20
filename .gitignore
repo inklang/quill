@@ -5,3 +5,4 @@ dist/
 .quill-cache/
 packages/
 quill.lock
+package-lock.json
