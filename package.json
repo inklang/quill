@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Package manager CLI for the Ink programming language",
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "dist/cli.js",
   "bin": {
     "quill": "./dist/cli.js",
