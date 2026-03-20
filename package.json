@@ -1,0 +1,27 @@
+{
+  "name": "@inklang/quill",
+  "version": "0.1.0",
+  "description": "Package manager CLI for the Ink programming language",
+  "type": "module",
+  "main": "dist/cli.js",
+  "bin": {
+    "quill": "./dist/cli.js",
+    "q": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest",
+    "prepublishOnly": "tsc"
+  },
+  "keywords": ["ink", "package-manager"],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.4.0"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "toml": "^3.0.0"
+  }
+}
