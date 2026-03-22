@@ -27,7 +27,7 @@ ink-core = "^1.0.0"
     const manifest = TomlParser.read(filePath);
     expect(manifest.name).toBe('my-grammar-pkg');
     expect(manifest.version).toBe('1.0.0');
-    expect(manifest.entry).toBe('mod');
+    expect(manifest.main).toBe('mod');
     expect(manifest.grammar).toBeDefined();
     expect(manifest.grammar!.entry).toBe('grammar.ink');
     expect(manifest.grammar!.output).toBe('dist/grammar.js');
@@ -40,7 +40,7 @@ ink-core = "^1.0.0"
     const manifest = {
       name: 'test-pkg',
       version: '0.2.0',
-      entry: 'main',
+      main: 'main',
       dependencies: { 'ink-core': '^1.0.0' },
     };
     const filePath = path.join(tmpDir, 'quill-write-test-' + Date.now() + '.toml');

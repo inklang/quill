@@ -4,7 +4,7 @@ import { AuthoredGrammar } from '../grammar/api.js'
 import { validate } from '../grammar/validator.js'
 import { join } from 'path'
 import { execSync } from 'child_process'
-import { writeFileSync, readFileSync, unlinkSync } from 'fs'
+import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { pathToFileURL } from 'url'
 
@@ -13,13 +13,35 @@ export class InkCheckCommand {
 
   async run(): Promise<void> {
     const manifest = TomlParser.read(join(this.projectDir, 'ink-package.toml'))
+    let hasErrors = false
 
-    if (!manifest.grammar) {
-      console.error('No [grammar] section in ink-package.toml')
-      process.exit(1)
+    // Check grammar
+    if (manifest.grammar) {
+      const grammarOk = await this.checkGrammar(manifest.name, manifest.grammar.entry)
+      if (!grammarOk) hasErrors = true
     }
 
-    const entryPath = join(this.projectDir, manifest.grammar.entry)
+    // Check runtime jar exists
+    if (manifest.runtime) {
+      const jarPath = join(this.projectDir, manifest.runtime.jar)
+      if (!existsSync(jarPath)) {
+        console.error(`Runtime jar not found: ${manifest.runtime.jar}`)
+        hasErrors = true
+      } else {
+        console.log(`Runtime jar OK: ${manifest.runtime.jar}`)
+      }
+    }
+
+    if (!manifest.grammar && !manifest.runtime) {
+      console.log('No [grammar] or [runtime] section — scripts-only package')
+    }
+
+    if (hasErrors) process.exit(1)
+    if (manifest.grammar || manifest.runtime) console.log('Check passed')
+  }
+
+  private async checkGrammar(packageName: string, grammarEntry: string): Promise<boolean> {
+    const entryPath = join(this.projectDir, grammarEntry)
     const grammarOutputPath = join(tmpdir(), `ink-grammar-check-${Date.now()}.json`)
 
     const entryUrl = pathToFileURL(entryPath).href
@@ -37,7 +59,7 @@ writeFileSync('${grammarOutputPath.replace(/\\/g, '\\\\')}', result);
         execSync(`npx tsx ${wrapperPath}`, { cwd: this.projectDir, stdio: 'pipe' })
       } catch {
         console.error(`Failed to load grammar file: ${entryPath}`)
-        process.exit(1)
+        return false
       }
       const content = readFileSync(grammarOutputPath, 'utf8')
       defaultExport = JSON.parse(content)
@@ -46,21 +68,21 @@ writeFileSync('${grammarOutputPath.replace(/\\/g, '\\\\')}', result);
       try { unlinkSync(grammarOutputPath) } catch {}
     }
 
-    // Validate package name matches
-    if (defaultExport.package !== manifest.name) {
-      console.error(`Package name mismatch: ink-package.toml says '${manifest.name}' but grammar.ts exports '${defaultExport.package}'`)
-      process.exit(1)
+    if (defaultExport.package !== packageName) {
+      console.error(`Package name mismatch: ink-package.toml says '${packageName}' but grammar.ts exports '${defaultExport.package}'`)
+      return false
     }
 
     const errors = validate(defaultExport)
     if (errors.length === 0) {
       console.log('Grammar OK — no errors found')
+      return true
     } else {
       console.error('Grammar errors found:')
       for (const err of errors) {
         console.error(`  [${err.type}] ${err.ruleName}: ${err.detail}`)
       }
-      process.exit(1)
+      return false
     }
   }
 }

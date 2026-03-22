@@ -1,0 +1,6 @@
+[package]
+name = "ink.scripts"
+version = "0.1.0"
+main = "mod"
+
+[dependencies]

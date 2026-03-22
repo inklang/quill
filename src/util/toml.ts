@@ -13,14 +13,21 @@ export class TomlParser {
     if (!pkg.name) throw new Error('ink-package.toml is missing package.name');
 
     const grammarSection = (data as any).grammar;
+    const runtimeSection = (data as any).runtime;
     return {
       name: pkg.name,
       version: pkg.version ?? '0.0.0',
-      entry: pkg.entry ?? 'main',
+      description: pkg.description,
+      author: pkg.author,
+      main: pkg.main ?? pkg.entry ?? 'main',
       dependencies: (data.dependencies as Record<string, string>) ?? {},
       grammar: grammarSection ? {
         entry: grammarSection.entry,
         output: grammarSection.output,
+      } : undefined,
+      runtime: runtimeSection ? {
+        jar: runtimeSection.jar,
+        entry: runtimeSection.entry,
       } : undefined,
     };
   }

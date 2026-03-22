@@ -18,7 +18,7 @@ export class NewCommand {
     const manifest: PackageManifest = {
       name,
       version: '0.1.0',
-      entry: 'mod',
+      main: 'mod',
       dependencies: {},
     };
 

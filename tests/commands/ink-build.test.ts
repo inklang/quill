@@ -26,4 +26,11 @@ it('ink build produces grammar.ir.json', () => {
   expect(ir.keywords).toContain('entity')
   expect(ir.keywords).toContain('spawn')
   expect(ir.declarations[0].keyword).toBe('entity')
+
+  // ink-manifest.json should be written with grammar only
+  const manifest = JSON.parse(readFileSync(join(FIXTURE, 'dist/ink-manifest.json'), 'utf8'))
+  expect(manifest.name).toBe('ink.test')
+  expect(manifest.version).toBe('0.1.0')
+  expect(manifest.grammar).toBe('grammar.ir.json')
+  expect(manifest.runtime).toBeUndefined()
 })

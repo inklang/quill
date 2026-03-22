@@ -23,7 +23,7 @@ ink-core = "^1.0.0"
     const manifest = TomlParser.read(filePath);
     expect(manifest.name).toBe('my-pkg');
     expect(manifest.version).toBe('1.0.0');
-    expect(manifest.entry).toBe('mod');
+    expect(manifest.main).toBe('mod');
     expect(manifest.dependencies['ink-core']).toBe('^1.0.0');
 
     fs.unlinkSync(filePath);
@@ -33,7 +33,7 @@ ink-core = "^1.0.0"
     const manifest = {
       name: 'test-pkg',
       version: '0.2.0',
-      entry: 'main',
+      main: 'main',
       dependencies: { 'ink-core': '^1.0.0' },
     };
     const filePath = path.join(tmpDir, 'quill-write-test-' + Date.now() + '.toml');
@@ -58,6 +58,70 @@ ink-core = "^1.0.0"
     const filePath = path.join(tmpDir, 'bad2-' + Date.now() + '.toml');
     fs.writeFileSync(filePath, '[package]\nversion = "1.0.0"');
     expect(() => TomlParser.read(filePath)).toThrow('missing package.name');
+    fs.unlinkSync(filePath);
+  });
+
+  it('reads [runtime] section', () => {
+    const content = `
+[package]
+name = "ink.mobs"
+version = "1.0.0"
+main = "mod"
+
+[dependencies]
+
+[runtime]
+jar = "runtime/mobs-runtime.jar"
+entry = "org.ink.mobs.MobsRuntime"
+`;
+    const filePath = path.join(tmpDir, 'quill-runtime-test-' + Date.now() + '.toml');
+    fs.writeFileSync(filePath, content);
+
+    const manifest = TomlParser.read(filePath);
+    expect(manifest.runtime).toBeDefined();
+    expect(manifest.runtime!.jar).toBe('runtime/mobs-runtime.jar');
+    expect(manifest.runtime!.entry).toBe('org.ink.mobs.MobsRuntime');
+
+    fs.unlinkSync(filePath);
+  });
+
+  it('reads description and author fields', () => {
+    const content = `
+[package]
+name = "ink.mobs"
+version = "1.0.0"
+description = "Mob declarations"
+author = "testauthor"
+main = "mod"
+
+[dependencies]
+`;
+    const filePath = path.join(tmpDir, 'quill-meta-test-' + Date.now() + '.toml');
+    fs.writeFileSync(filePath, content);
+
+    const manifest = TomlParser.read(filePath);
+    expect(manifest.description).toBe('Mob declarations');
+    expect(manifest.author).toBe('testauthor');
+
+    fs.unlinkSync(filePath);
+  });
+
+  it('runtime and grammar are undefined when absent', () => {
+    const content = `
+[package]
+name = "ink.scripts"
+version = "0.1.0"
+main = "mod"
+
+[dependencies]
+`;
+    const filePath = path.join(tmpDir, 'quill-minimal-test-' + Date.now() + '.toml');
+    fs.writeFileSync(filePath, content);
+
+    const manifest = TomlParser.read(filePath);
+    expect(manifest.grammar).toBeUndefined();
+    expect(manifest.runtime).toBeUndefined();
+
     fs.unlinkSync(filePath);
   });
 });

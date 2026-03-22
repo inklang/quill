@@ -3,19 +3,27 @@ export interface GrammarConfig {
   output: string;
 }
 
+export interface RuntimeConfig {
+  jar: string;
+  entry: string;
+}
+
 export interface PackageManifest {
   name: string;
   version: string;
-  entry: string;
+  description?: string;
+  author?: string;
+  main: string;
   dependencies: Record<string, string>;
   grammar?: GrammarConfig;
+  runtime?: RuntimeConfig;
 }
 
 export function defaultManifest(name: string): PackageManifest {
   return {
     name,
     version: '0.1.0',
-    entry: 'mod',
+    main: 'mod',
     dependencies: {},
   };
 }

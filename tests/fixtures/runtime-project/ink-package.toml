@@ -1,0 +1,17 @@
+[package]
+name = "ink.mobs"
+version = "1.0.0"
+description = "Mob declarations for Ink"
+author = "testauthor"
+main = "mod"
+
+[dependencies]
+"ink.core" = ">=1.0.0"
+
+[grammar]
+entry = "src/grammar.ts"
+output = "dist/grammar.ir.json"
+
+[runtime]
+jar = "runtime/mobs-runtime.jar"
+entry = "org.ink.mobs.MobsRuntime"

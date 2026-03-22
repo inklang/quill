@@ -17,7 +17,7 @@ export class InitCommand {
     const manifest: PackageManifest = {
       name,
       version: '0.1.0',
-      entry: 'main',
+      main: 'main',
       dependencies: {},
     };
 

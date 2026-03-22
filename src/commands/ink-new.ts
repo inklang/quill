@@ -25,7 +25,7 @@ export class InkNewCommand {
     const manifest = {
       name: pkgName,
       version: '0.1.0',
-      entry: grammarEntry,
+      main: 'mod',
       dependencies: {},
       grammar: {
         entry: grammarEntry,

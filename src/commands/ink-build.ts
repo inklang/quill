@@ -3,8 +3,8 @@ import { TomlParser } from '../util/toml.js'
 import { AuthoredGrammar } from '../grammar/api.js'
 import { serialize } from '../grammar/serializer.js'
 import { validate } from '../grammar/validator.js'
-import { writeFileSync, mkdirSync, unlinkSync, readFileSync } from 'fs'
-import { join, dirname } from 'path'
+import { writeFileSync, mkdirSync, unlinkSync, readFileSync, existsSync, copyFileSync } from 'fs'
+import { join, dirname, basename } from 'path'
 import { execSync } from 'child_process'
 import { tmpdir } from 'os'
 import { pathToFileURL } from 'url'
@@ -14,17 +14,47 @@ export class InkBuildCommand {
 
   async run(): Promise<void> {
     const manifest = TomlParser.read(join(this.projectDir, 'ink-package.toml'))
+    const distDir = join(this.projectDir, 'dist')
+    mkdirSync(distDir, { recursive: true })
 
-    if (!manifest.grammar) {
-      console.error('No [grammar] section in ink-package.toml')
-      process.exit(1)
+    const inkManifest: Record<string, unknown> = {
+      name: manifest.name,
+      version: manifest.version,
     }
 
-    const entryPath = join(this.projectDir, manifest.grammar.entry)
-    const outputPath = join(this.projectDir, manifest.grammar.output)
+    // TODO: compile *.ink → *.inkc to dist/
 
-    // tsx needs a file on disk to run with ESM, so we write a small wrapper to
-    // the system's temp directory, execute it with tsx, then read the result.
+    // Grammar compilation
+    if (manifest.grammar) {
+      await this.buildGrammar(manifest.name, manifest.grammar.entry, manifest.grammar.output)
+      inkManifest.grammar = 'grammar.ir.json'
+    }
+
+    // Runtime jar validation + copy
+    if (manifest.runtime) {
+      const jarSource = join(this.projectDir, manifest.runtime.jar)
+      if (!existsSync(jarSource)) {
+        console.error(`Runtime jar not found: ${manifest.runtime.jar} — build it with Gradle first`)
+        process.exit(1)
+      }
+      const jarFilename = basename(manifest.runtime.jar)
+      copyFileSync(jarSource, join(distDir, jarFilename))
+      inkManifest.runtime = {
+        jar: jarFilename,
+        entry: manifest.runtime.entry,
+      }
+      console.log(`Runtime jar copied to dist/${jarFilename}`)
+    }
+
+    // Write ink-manifest.json
+    writeFileSync(join(distDir, 'ink-manifest.json'), JSON.stringify(inkManifest, null, 2))
+    console.log('Wrote dist/ink-manifest.json')
+  }
+
+  private async buildGrammar(packageName: string, grammarEntry: string, grammarOutput: string): Promise<void> {
+    const entryPath = join(this.projectDir, grammarEntry)
+    const outputPath = join(this.projectDir, grammarOutput)
+
     const wrapperPath = join(tmpdir(), `ink-grammar-wrapper-${Date.now()}.mjs`)
     const grammarOutputPath = join(tmpdir(), `ink-grammar-output-${Date.now()}.json`)
 
@@ -56,13 +86,11 @@ writeFileSync('${grammarOutputPath.replace(/\\/g, '\\\\')}', result);
       try { unlinkSync(grammarOutputPath) } catch {}
     }
 
-    // Validate package name matches
-    if (defaultExport.package !== manifest.name) {
-      console.error(`Package name mismatch: ink-package.toml says '${manifest.name}' but grammar.ts exports '${defaultExport.package}'`)
+    if (defaultExport.package !== packageName) {
+      console.error(`Package name mismatch: ink-package.toml says '${packageName}' but grammar.ts exports '${defaultExport.package}'`)
       process.exit(1)
     }
 
-    // Validate
     const errors = validate(defaultExport)
     if (errors.length > 0) {
       console.error('Grammar validation errors:')
@@ -72,13 +100,8 @@ writeFileSync('${grammarOutputPath.replace(/\\/g, '\\\\')}', result);
       process.exit(1)
     }
 
-    // Serialize to IR
     const ir = serialize(defaultExport)
-
-    // Ensure output directory exists
     mkdirSync(dirname(outputPath), { recursive: true })
-
-    // Write IR JSON
     writeFileSync(outputPath, JSON.stringify(ir, null, 2))
     console.log(`Grammar IR written to ${outputPath}`)
   }
