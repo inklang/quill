@@ -5,7 +5,6 @@ export default defineGrammar({
   declarations: [
     declaration({
       keyword: 'entity',
-      name: 'identifier',
       inheritsBase: true,
       rules: [
         rule('spawn_clause', r => r.seq(

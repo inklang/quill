@@ -7,7 +7,6 @@ test('defineGrammar accepts package and declarations', () => {
     declarations: [
       declaration({
         keyword: 'mob',
-        name: 'identifier',
         inheritsBase: true,
         rules: [
           rule('phase_clause', r => r.seq(
@@ -23,6 +22,36 @@ test('defineGrammar accepts package and declarations', () => {
   expect(g.package).toBe('ink.mobs')
   expect(g.declarations.length).toBe(1)
   expect(g.declarations[0].keyword).toBe('mob')
+})
+
+test('declaration accepts custom name and handler', () => {
+  const d = declaration({
+    keyword: 'event',
+    name: r => r.string(),
+    inheritsBase: false,
+    handler: 'handleEvent',
+    rules: [
+      rule('body', r => r.block(), 'handleBody')
+    ]
+  })
+  expect(d.keyword).toBe('event')
+  expect(typeof d.name).toBe('function')
+  expect(d.handler).toBe('handleEvent')
+  expect(d.rules[0][2]).toBe('handleBody')
+})
+
+test('rule with handler returns three-element tuple', () => {
+  const r = rule('spawn', b => b.identifier(), 'handleSpawn')
+  expect(r[0]).toBe('spawn')
+  expect(r[1]).toEqual({ type: 'identifier' })
+  expect(r[2]).toBe('handleSpawn')
+})
+
+test('rule without handler returns two-element tuple', () => {
+  const r = rule('spawn', b => b.identifier())
+  expect(r.length).toBe(2)
+  expect(r[0]).toBe('spawn')
+  expect(r[1]).toEqual({ type: 'identifier' })
 })
 
 test('RuleBuilder produces all rule types', () => {

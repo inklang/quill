@@ -8,7 +8,6 @@ test('detect unresolved ref', () => {
     declarations: [
       declaration({
         keyword: 'outer',
-        name: 'identifier',
         inheritsBase: false,
         rules: [
           rule('inner', r => r.ref('nonexistent'))
@@ -26,7 +25,6 @@ test('no errors for valid refs', () => {
     declarations: [
       declaration({
         keyword: 'outer',
-        name: 'identifier',
         inheritsBase: false,
         rules: [
           rule('inner', r => r.ref('x'))
@@ -34,7 +32,6 @@ test('no errors for valid refs', () => {
       }),
       declaration({
         keyword: 'other',
-        name: 'identifier',
         inheritsBase: false,
         rules: [
           rule('x', r => r.identifier())
@@ -47,8 +44,8 @@ test('no errors for valid refs', () => {
 })
 
 test('detect keyword conflict between packages', () => {
-  const g1 = defineGrammar({ package: 'pkg.a', declarations: [declaration({ keyword: 'mob', name: 'identifier', inheritsBase: false, rules: [] })] })
-  const g2 = defineGrammar({ package: 'pkg.b', declarations: [declaration({ keyword: 'mob', name: 'identifier', inheritsBase: false, rules: [] })] })
+  const g1 = defineGrammar({ package: 'pkg.a', declarations: [declaration({ keyword: 'mob', inheritsBase: false, rules: [] })] })
+  const g2 = defineGrammar({ package: 'pkg.b', declarations: [declaration({ keyword: 'mob', inheritsBase: false, rules: [] })] })
   const errors = checkKeywordConflicts([g1, g2])
   expect(errors.some(e => e.type === 'keyword_conflict')).toBe(true)
 })

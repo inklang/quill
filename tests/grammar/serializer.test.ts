@@ -8,7 +8,6 @@ test('serialize produces valid GrammarPackage', () => {
     declarations: [
       declaration({
         keyword: 'mob',
-        name: 'identifier',
         inheritsBase: true,
         rules: [
           rule('phase_clause', r => r.seq(
@@ -30,9 +29,11 @@ test('serialize produces valid GrammarPackage', () => {
   expect(ir.keywords).toContain('on')
   expect(ir.keywords).toContain('phase')
   expect(Object.keys(ir.rules)).toContain('ink.mobs/phase_clause')
+  expect(ir.rules['ink.mobs/phase_clause'].rule.type).toBe('seq')
   expect(ir.declarations.length).toBe(1)
   expect(ir.declarations[0].keyword).toBe('mob')
   expect(ir.declarations[0].inheritsBase).toBe(true)
+  expect(ir.declarations[0].nameRule).toEqual({ type: 'identifier' })
   expect(ir.declarations[0].scopeRules).toContain('ink.mobs/phase_clause')
 })
 
@@ -42,7 +43,6 @@ test('keywords are deduplicated', () => {
     declarations: [
       declaration({
         keyword: 'foo',
-        name: 'identifier',
         inheritsBase: false,
         rules: [
           rule('test', r => r.seq(
@@ -64,7 +64,6 @@ test('ref rules get namespaced', () => {
     declarations: [
       declaration({
         keyword: 'outer',
-        name: 'identifier',
         inheritsBase: false,
         rules: [
           rule('inner', r => r.ref('other'))
@@ -72,7 +71,6 @@ test('ref rules get namespaced', () => {
       }),
       declaration({
         keyword: 'other',
-        name: 'identifier',
         inheritsBase: false,
         rules: [
           rule('x', r => r.identifier())
@@ -81,5 +79,76 @@ test('ref rules get namespaced', () => {
     ]
   })
   const ir = serialize(authored)
-  expect(ir.rules['ink.test/inner']).toEqual({ type: 'ref', rule: 'ink.test/other' })
+  expect(ir.rules['ink.test/inner'].rule).toEqual({ type: 'ref', rule: 'ink.test/other' })
+})
+
+test('custom name rule is serialized', () => {
+  const authored = defineGrammar({
+    package: 'ink.events',
+    declarations: [
+      declaration({
+        keyword: 'event',
+        name: r => r.string(),
+        inheritsBase: false,
+        rules: [
+          rule('body', r => r.block())
+        ]
+      })
+    ]
+  })
+  const ir = serialize(authored)
+  expect(ir.declarations[0].nameRule).toEqual({ type: 'string' })
+})
+
+test('declaration handler is serialized', () => {
+  const authored = defineGrammar({
+    package: 'ink.mobs',
+    declarations: [
+      declaration({
+        keyword: 'mob',
+        inheritsBase: true,
+        handler: 'handleMob',
+        rules: [
+          rule('spawn', r => r.identifier())
+        ]
+      })
+    ]
+  })
+  const ir = serialize(authored)
+  expect(ir.declarations[0].handler).toBe('handleMob')
+})
+
+test('rule handler is serialized', () => {
+  const authored = defineGrammar({
+    package: 'ink.mobs',
+    declarations: [
+      declaration({
+        keyword: 'mob',
+        inheritsBase: true,
+        rules: [
+          rule('spawn', r => r.identifier(), 'handleSpawn')
+        ]
+      })
+    ]
+  })
+  const ir = serialize(authored)
+  expect(ir.rules['ink.mobs/spawn'].handler).toBe('handleSpawn')
+})
+
+test('handlers are omitted when absent', () => {
+  const authored = defineGrammar({
+    package: 'ink.test',
+    declarations: [
+      declaration({
+        keyword: 'foo',
+        inheritsBase: false,
+        rules: [
+          rule('bar', r => r.identifier())
+        ]
+      })
+    ]
+  })
+  const ir = serialize(authored)
+  expect(ir.declarations[0].handler).toBeUndefined()
+  expect(ir.rules['ink.test/bar'].handler).toBeUndefined()
 })

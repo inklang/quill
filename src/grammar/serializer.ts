@@ -1,6 +1,6 @@
 // src/grammar/serializer.ts
-import { AuthoredGrammar } from './api.js'
-import { GrammarPackage, Rule } from './ir.js'
+import { AuthoredGrammar, RuleBuilder } from './api.js'
+import { GrammarPackage, RuleEntry, Rule } from './ir.js'
 
 function namespaced(packageName: string, ruleName: string): string {
   return `${packageName}/${ruleName}`
@@ -46,27 +46,31 @@ function collectKeywords(r: Rule): string[] {
 }
 
 export function serialize(grammar: AuthoredGrammar): GrammarPackage {
-  const rules: Record<string, Rule> = {}
+  const rules: Record<string, RuleEntry> = {}
   const keywords: string[] = []
 
   for (const decl of grammar.declarations) {
-    for (const [ruleName, rule] of decl.rules) {
+    for (const [ruleName, rule, handler] of decl.rules) {
       const nsName = namespaced(grammar.package, ruleName)
-      rules[nsName] = serializeRule(rule, grammar.package)
+      const entry: RuleEntry = { rule: serializeRule(rule, grammar.package) }
+      if (handler) entry.handler = handler
+      rules[nsName] = entry
       keywords.push(...collectKeywords(rule))
       keywords.push(decl.keyword)
     }
   }
 
   const declarations = grammar.declarations.map(decl => {
-    const nameRule: Rule = { type: 'identifier' }
+    const nameRule: Rule = typeof decl.name === 'function' ? decl.name(new RuleBuilder()) : { type: 'identifier' }
     const scopeRuleNames = decl.rules.map(([name]) => namespaced(grammar.package, name))
-    return {
+    const def: { keyword: string; nameRule: Rule; scopeRules: string[]; inheritsBase: boolean; handler?: string } = {
       keyword: decl.keyword,
       nameRule,
       scopeRules: scopeRuleNames,
       inheritsBase: decl.inheritsBase,
     }
+    if (decl.handler) def.handler = decl.handler
+    return def
   })
 
   const uniqueKeywords = [...new Set(keywords)]

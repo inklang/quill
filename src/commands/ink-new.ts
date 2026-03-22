@@ -45,7 +45,6 @@ export default defineGrammar({
   declarations: [
     declaration({
       keyword: 'mykeyword',
-      name: 'identifier',
       inheritsBase: true,
       rules: [
         rule('my_rule', r => r.identifier())

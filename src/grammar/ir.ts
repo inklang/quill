@@ -1,10 +1,15 @@
 // src/grammar/ir.ts
 
+export interface RuleEntry {
+  rule: Rule
+  handler?: string
+}
+
 export interface GrammarPackage {
   version: 1
   package: string
   keywords: string[]
-  rules: Record<string, Rule>
+  rules: Record<string, RuleEntry>
   declarations: DeclarationDef[]
 }
 
@@ -13,6 +18,7 @@ export interface DeclarationDef {
   nameRule: Rule
   scopeRules: string[]
   inheritsBase: boolean
+  handler?: string
 }
 
 export type Rule =

@@ -20,17 +20,18 @@ export class RuleBuilder {
 
 export interface DeclarationInput {
   keyword: string
-  name: string
+  name?: (r: RuleBuilder) => Rule
   inheritsBase: boolean
-  rules: Array<[string, Rule]>  // [ruleName, rule]
+  handler?: string
+  rules: Array<[string, Rule, string?]>
 }
 
 export function declaration(input: DeclarationInput): DeclarationInput {
   return input
 }
 
-export function rule(name: string, build: (r: RuleBuilder) => Rule): [string, Rule] {
-  return [name, build(new RuleBuilder())]
+export function rule(name: string, build: (r: RuleBuilder) => Rule, handler?: string): [string, Rule, string?] {
+  return handler !== undefined ? [name, build(new RuleBuilder()), handler] : [name, build(new RuleBuilder())]
 }
 
 export interface GrammarInput {
