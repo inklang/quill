@@ -21,7 +21,7 @@ export class InitCommand {
       dependencies: {},
     };
 
-    TomlParser.write(manifest, quillToml);
+    fs.writeFileSync(quillToml, TomlParser.write(manifest));
     console.log(`Created quill.toml: ${name} v0.1.0`);
   }
 }

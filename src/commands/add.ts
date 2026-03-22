@@ -53,7 +53,7 @@ export class AddCommand {
 
     // Update quill.toml
     const updated = { ...manifest, dependencies: { ...manifest.dependencies, [pkgName]: `^${pkgVersion.version}` } };
-    TomlParser.write(updated, quillTomlPath);
+    fs.writeFileSync(quillTomlPath, TomlParser.write(updated));
 
     console.log(`Installed ${pkgName} v${pkgVersion.version} → packages/${pkgName.replace('/', '-')}`);
   }

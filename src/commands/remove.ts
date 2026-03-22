@@ -30,7 +30,7 @@ export class RemoveCommand {
         Object.entries(manifest.dependencies).filter(([k]) => k !== pkgName)
       ),
     };
-    TomlParser.write(updated, quillTomlPath);
+    fs.writeFileSync(quillTomlPath, TomlParser.write(updated));
 
     console.log(`Removed ${pkgName} from dependencies.`);
   }

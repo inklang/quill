@@ -1,4 +1,4 @@
-import toml from 'toml';
+import * as toml from '@iarna/toml';
 import fs from 'fs';
 import path from 'path';
 import { PackageManifest } from '../model/manifest.js';
@@ -20,18 +20,7 @@ export class TomlParser {
     };
   }
 
-  static write(manifest: PackageManifest, filePath: string): void {
-    const depsLines = Object.entries(manifest.dependencies)
-      .map(([k, v]) => `${k} = "${v}"`)
-      .join('\n');
-
-    const content = `[package]
-name = "${manifest.name}"
-version = "${manifest.version}"
-entry = "${manifest.entry}"
-${depsLines ? '\n[dependencies]\n' + depsLines : ''}
-`;
-    fs.mkdirSync(path.dirname(filePath) || '.', { recursive: true });
-    fs.writeFileSync(filePath, content);
+  static write(manifest: PackageManifest): string {
+    return toml.stringify(manifest as any);
   }
 }

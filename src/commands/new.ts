@@ -22,7 +22,7 @@ export class NewCommand {
       dependencies: {},
     };
 
-    TomlParser.write(manifest, path.join(targetDir, 'quill.toml'));
+    fs.writeFileSync(path.join(targetDir, 'quill.toml'), TomlParser.write(manifest));
     fs.writeFileSync(path.join(targetDir, 'mod.ink'), `// ${name} v0.1.0\n\n`);
 
     console.log(`Created package: ${name}/`);
