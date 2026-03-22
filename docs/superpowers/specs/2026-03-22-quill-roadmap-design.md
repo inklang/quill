@@ -60,7 +60,7 @@ Order: Cleanup -> Scaffold -> Build/Gradle -> Compilation -> Registry -> Watch -
 **Files modified:**
 - `src/cli.ts` — remove `ink-new` command registration
 - Delete `src/commands/ink-new.ts`
-- Delete any ink-new tests
+- Remove any ink-new test files if they exist (none currently in the codebase)
 
 **Acceptance criteria:**
 - `quill ink-new` is not a recognized command
@@ -132,7 +132,7 @@ ink.mobs/
 - `dist/ink-manifest.json` correctly references the built JAR and entry class
 - External JAR path (`[runtime] jar = "/some/prebuilt.jar"`) still works
 - Grammar-only packages (no `runtime/` dir, no `[runtime]` section) build without errors
-- Tests cover: Gradle success, Gradle failure, wrapper detection, external JAR, no runtime
+- Tests cover: Gradle success, Gradle failure, wrapper detection (including `gradlew.bat` on Windows), external JAR, no runtime
 
 **Unblocks:** Chunk 4 — build now produces a complete package, the JVM runtime is available to invoke for `.ink` compilation
 
@@ -147,13 +147,24 @@ ink.mobs/
 - New utility or inline logic for subprocess invocation of the JVM compiler
 - Tests — compilation step (mock subprocess)
 
+**Compiler location:** The Ink compiler is a separate JAR (`ink-compiler.jar`) that ships with the Ink engine / Paper plugin, not with individual packages. Quill locates it via the `INK_COMPILER` environment variable (path to the JAR) or a configurable `[build] compiler` field in `ink-package.toml`. If neither is set, Quill prints an error: "Ink compiler not found. Set INK_COMPILER or [build] compiler in ink-package.toml."
+
+**Invocation command:**
+```
+java -jar <ink-compiler.jar> compile \
+  --grammar dist/grammar.ir.json \
+  --sources scripts/ \
+  --out dist/scripts/
+```
+
 **Behavior:**
-1. After grammar IR and runtime JAR are in `dist/`, scan `scripts/` for `*.ink` files
-2. Invoke the JVM compiler as a subprocess: pass it the grammar IR path, the list of `.ink` source files, and an output directory (`dist/scripts/`)
-3. The compiler produces one `.inkc` file per `.ink` source file
-4. On compiler failure: print compiler output, exit with code 1
-5. If no `scripts/` directory or no `.ink` files: skip silently
-6. Update `dist/ink-manifest.json` with a `scripts` field listing compiled files
+1. After grammar IR is in `dist/`, scan `scripts/` for `*.ink` files
+2. Resolve compiler JAR path from `INK_COMPILER` env var or `[build] compiler` in manifest
+3. Invoke: `java -jar <compiler> compile --grammar dist/grammar.ir.json --sources scripts/ --out dist/scripts/`
+4. The compiler produces one `.inkc` file per `.ink` source file
+5. On compiler failure: print compiler output, exit with code 1
+6. If no `scripts/` directory or no `.ink` files: skip silently
+7. Update `dist/ink-manifest.json` with a `scripts` field listing compiled files
 
 **Acceptance criteria:**
 - `quill build` compiles `scripts/*.ink` to `dist/scripts/*.inkc`
@@ -161,7 +172,9 @@ ink.mobs/
 - Missing `scripts/` directory is not an error
 - `ink-manifest.json` lists compiled script files
 - The subprocess invocation is stubbed/mockable for tests
-- Works even if only grammar exists (no runtime) — compiler uses grammar IR only
+- Compiler JAR is resolved from `INK_COMPILER` env var or `[build] compiler` manifest field
+- Clear error message when compiler JAR is not found
+- Works with grammar-only packages (no runtime JAR needed — only the compiler JAR and grammar IR)
 
 **Unblocks:** Chunk 5 — packages now produce complete artifacts (grammar IR + runtime JAR + compiled scripts) ready for distribution
 
@@ -174,7 +187,7 @@ ink.mobs/
 **Files modified:**
 - New `src/commands/publish.ts` — `quill publish` command
 - `src/cli.ts` — register publish command
-- `src/registry/client.ts` — add publish endpoint, auth token handling
+- `src/registry/client.ts` — extend existing `RegistryClient` with publish endpoint and auth token handling
 - `src/commands/add.ts` / `src/commands/install.ts` — verify/fix real package consumption flow
 - `src/util/fs.ts` — add tarball packing (complement to existing `extractTarGz`)
 - Tests — publish flow, tarball packing, end-to-end add/install with mock registry
@@ -195,7 +208,7 @@ ink.mobs/
 **Acceptance criteria:**
 - `quill publish` packs and uploads a package to the registry
 - Auth token is read from `~/.quillrc` or `QUILL_TOKEN`
-- Missing auth produces a clear error ("run `quill login` or set QUILL_TOKEN")
+- Missing auth produces a clear error ("set QUILL_TOKEN or add token to ~/.quillrc")
 - `quill add some-pkg` downloads, extracts, and installs a real package
 - `quill install` resolves all dependencies and writes lockfile
 - Republishing the same version is rejected by the registry (409 or similar)
@@ -212,7 +225,7 @@ ink.mobs/
 **Files modified:**
 - New `src/commands/watch.ts` — `quill watch` command
 - `src/cli.ts` — register watch command
-- `package.json` — add `chokidar` dependency (or use `fs.watch` with debouncing)
+- `package.json` — add `chokidar` dependency for cross-platform file watching
 - Tests — watcher triggers build on file change
 
 **Behavior:**
