@@ -1,0 +1,9 @@
+[package]
+name = "ink.test"
+version = "0.1.0"
+
+[dependencies]
+
+[grammar]
+entry = "src/grammar.ts"
+output = "dist/grammar.ir.json"

@@ -7,6 +7,9 @@ import { RemoveCommand } from './commands/remove.js';
 import { InstallCommand } from './commands/install.js';
 import { LsCommand } from './commands/ls.js';
 import { CleanCommand } from './commands/clean.js';
+import { InkBuildCommand } from './commands/ink-build.js'
+import { InkCheckCommand } from './commands/ink-check.js'
+import { InkNewCommand } from './commands/ink-new.js'
 
 const program = new Command();
 const projectDir = process.cwd();
@@ -43,5 +46,29 @@ program.command('ls').description('List installed packages').action(async () => 
 program.command('clean').description('Remove .quill-cache/').action(async () => {
   await new CleanCommand(projectDir).run();
 });
+
+program
+  .command('build')
+  .description('Compile grammar and/or Ink scripts')
+  .action(async () => {
+    const cmd = new InkBuildCommand(process.cwd())
+    await cmd.run()
+  })
+
+program
+  .command('check')
+  .description('Check grammar and Ink script for errors')
+  .action(async () => {
+    const cmd = new InkCheckCommand(process.cwd())
+    await cmd.run()
+  })
+
+program
+  .command('ink-new')
+  .description('Scaffold a new Ink grammar package')
+  .action(async () => {
+    const cmd = new InkNewCommand(process.cwd())
+    await cmd.run()
+  })
 
 program.parse();
