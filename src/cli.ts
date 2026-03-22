@@ -9,7 +9,6 @@ import { LsCommand } from './commands/ls.js';
 import { CleanCommand } from './commands/clean.js';
 import { InkBuildCommand } from './commands/ink-build.js'
 import { InkCheckCommand } from './commands/ink-check.js'
-import { InkNewCommand } from './commands/ink-new.js'
 
 const program = new Command();
 const projectDir = process.cwd();
@@ -60,14 +59,6 @@ program
   .description('Check grammar and Ink script for errors')
   .action(async () => {
     const cmd = new InkCheckCommand(process.cwd())
-    await cmd.run()
-  })
-
-program
-  .command('ink-new')
-  .description('Scaffold a new Ink grammar package')
-  .action(async () => {
-    const cmd = new InkNewCommand(process.cwd())
     await cmd.run()
   })
 
