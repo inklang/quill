@@ -33,6 +33,18 @@ export class TomlParser {
   }
 
   static write(manifest: PackageManifest): string {
-    return toml.stringify(manifest as any);
+    const data: Record<string, unknown> = {
+      package: {
+        name: manifest.name,
+        version: manifest.version,
+        main: manifest.main,
+        ...(manifest.description ? { description: manifest.description } : {}),
+        ...(manifest.author ? { author: manifest.author } : {}),
+      },
+      dependencies: manifest.dependencies,
+    };
+    if (manifest.grammar) data.grammar = manifest.grammar;
+    if (manifest.runtime) data.runtime = manifest.runtime;
+    return toml.stringify(data as any);
   }
 }

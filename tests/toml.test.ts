@@ -124,4 +124,27 @@ main = "mod"
 
     fs.unlinkSync(filePath);
   });
+
+  it('write() output can be read back by read()', () => {
+    const manifest: import('../model/manifest.js').PackageManifest = {
+      name: 'ink.roundtrip',
+      version: '1.0.0',
+      main: 'mod',
+      dependencies: { 'ink.core': '>=1.0.0' },
+      grammar: { entry: 'src/grammar.ts', output: 'dist/grammar.ir.json' },
+      runtime: { jar: 'runtime/test.jar', entry: 'ink.test.TestRuntime' },
+    }
+    const tomlStr = TomlParser.write(manifest)
+    const tmpPath = path.join(os.tmpdir(), `toml-roundtrip-${Date.now()}.toml`)
+    fs.writeFileSync(tmpPath, tomlStr)
+    try {
+      const parsed = TomlParser.read(tmpPath)
+      expect(parsed.name).toBe('ink.roundtrip')
+      expect(parsed.version).toBe('1.0.0')
+      expect(parsed.grammar?.entry).toBe('src/grammar.ts')
+      expect(parsed.runtime?.jar).toBe('runtime/test.jar')
+    } finally {
+      fs.unlinkSync(tmpPath)
+    }
+  });
 });
