@@ -15,13 +15,13 @@ export class LsCommand {
     const entries = fs.readdirSync(packagesDir)
       .filter(f => fs.statSync(path.join(packagesDir, f)).isDirectory())
       .map(name => {
-        const quillToml = path.join(packagesDir, name, 'quill.toml');
-        if (fs.existsSync(quillToml)) {
+        const inkPackageToml = path.join(packagesDir, name, 'ink-package.toml');
+        if (fs.existsSync(inkPackageToml)) {
           try {
-            const manifest = TomlParser.read(quillToml);
+            const manifest = TomlParser.read(inkPackageToml);
             return `  ${manifest.name} v${manifest.version}`;
           } catch {
-            return `  ${name} (invalid quill.toml)`;
+            return `  ${name} (invalid ink-package.toml)`;
           }
         }
         return `  ${name} (no manifest)`;

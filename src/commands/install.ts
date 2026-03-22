@@ -9,13 +9,13 @@ export class InstallCommand {
   constructor(private projectDir: string) {}
 
   async run(): Promise<void> {
-    const quillTomlPath = path.join(this.projectDir, 'quill.toml');
-    if (!fs.existsSync(quillTomlPath)) {
-      console.log('No quill.toml found. Run `quill init` or `quill new` first.');
+    const inkPackageTomlPath = path.join(this.projectDir, 'ink-package.toml');
+    if (!fs.existsSync(inkPackageTomlPath)) {
+      console.log('No ink-package.toml found. Run `quill init` or `quill new` first.');
       return;
     }
 
-    const manifest = TomlParser.read(quillTomlPath);
+    const manifest = TomlParser.read(inkPackageTomlPath);
     const client = new RegistryClient();
     const index = await client.fetchIndex();
 

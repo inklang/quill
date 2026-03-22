@@ -7,9 +7,9 @@ export class InitCommand {
   constructor(private projectDir: string) {}
 
   async run(): Promise<void> {
-    const quillToml = path.join(this.projectDir, 'quill.toml');
-    if (fs.existsSync(quillToml)) {
-      console.log('quill.toml already exists.');
+    const inkPackageToml = path.join(this.projectDir, 'ink-package.toml');
+    if (fs.existsSync(inkPackageToml)) {
+      console.log('ink-package.toml already exists.');
       return;
     }
 
@@ -21,7 +21,7 @@ export class InitCommand {
       dependencies: {},
     };
 
-    fs.writeFileSync(quillToml, TomlParser.write(manifest));
-    console.log(`Created quill.toml: ${name} v0.1.0`);
+    fs.writeFileSync(inkPackageToml, TomlParser.write(manifest));
+    console.log(`Created ink-package.toml: ${name} v0.1.0`);
   }
 }

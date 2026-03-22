@@ -14,10 +14,10 @@ export class AddCommand {
       : [pkgSpec, null];
 
     const range = version ? new SemverRange(`^${version}`) : new SemverRange('>=0.0.0');
-    const quillTomlPath = path.join(this.projectDir, 'quill.toml');
+    const inkPackageTomlPath = path.join(this.projectDir, 'ink-package.toml');
 
-    const manifest = fs.existsSync(quillTomlPath)
-      ? TomlParser.read(quillTomlPath)
+    const manifest = fs.existsSync(inkPackageTomlPath)
+      ? TomlParser.read(inkPackageTomlPath)
       : { name: path.basename(this.projectDir), version: '0.1.0', entry: 'main', dependencies: {} };
 
     if (pkgName in manifest.dependencies) {
@@ -51,9 +51,9 @@ export class AddCommand {
     await FileUtils.downloadFile(pkgVersion.url, tarball);
     await FileUtils.extractTarGz(tarball, pkgDir);
 
-    // Update quill.toml
+    // Update ink-package.toml
     const updated = { ...manifest, dependencies: { ...manifest.dependencies, [pkgName]: `^${pkgVersion.version}` } };
-    fs.writeFileSync(quillTomlPath, TomlParser.write(updated));
+    fs.writeFileSync(inkPackageTomlPath, TomlParser.write(updated));
 
     console.log(`Installed ${pkgName} v${pkgVersion.version} → packages/${pkgName.replace('/', '-')}`);
   }

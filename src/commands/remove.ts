@@ -7,13 +7,13 @@ export class RemoveCommand {
   constructor(private projectDir: string) {}
 
   async run(pkgName: string): Promise<void> {
-    const quillTomlPath = path.join(this.projectDir, 'quill.toml');
-    if (!fs.existsSync(quillTomlPath)) {
-      console.log('No quill.toml found.');
+    const inkPackageTomlPath = path.join(this.projectDir, 'ink-package.toml');
+    if (!fs.existsSync(inkPackageTomlPath)) {
+      console.log('No ink-package.toml found.');
       return;
     }
 
-    const manifest = TomlParser.read(quillTomlPath);
+    const manifest = TomlParser.read(inkPackageTomlPath);
     if (!(pkgName in manifest.dependencies)) {
       console.log(`${pkgName} is not in dependencies.`);
       return;
@@ -30,7 +30,7 @@ export class RemoveCommand {
         Object.entries(manifest.dependencies).filter(([k]) => k !== pkgName)
       ),
     };
-    fs.writeFileSync(quillTomlPath, TomlParser.write(updated));
+    fs.writeFileSync(inkPackageTomlPath, TomlParser.write(updated));
 
     console.log(`Removed ${pkgName} from dependencies.`);
   }

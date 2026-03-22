@@ -9,14 +9,19 @@ export class TomlParser {
     const data = toml.parse(content);
 
     const pkg = (data as any).package;
-    if (!pkg) throw new Error('quill.toml is missing [package] section');
-    if (!pkg.name) throw new Error('quill.toml is missing package.name');
+    if (!pkg) throw new Error('ink-package.toml is missing [package] section');
+    if (!pkg.name) throw new Error('ink-package.toml is missing package.name');
 
+    const grammarSection = (data as any).grammar;
     return {
       name: pkg.name,
       version: pkg.version ?? '0.0.0',
       entry: pkg.entry ?? 'main',
       dependencies: (data.dependencies as Record<string, string>) ?? {},
+      grammar: grammarSection ? {
+        entry: grammarSection.entry,
+        output: grammarSection.output,
+      } : undefined,
     };
   }
 
