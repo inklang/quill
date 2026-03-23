@@ -149,8 +149,9 @@ export class InkBuildCommand {
     const entryPath = join(this.projectDir, grammarEntry)
     const outputPath = join(this.projectDir, grammarOutput)
 
-    const wrapperPath = join(tmpdir(), `ink-grammar-wrapper-${Date.now()}.mjs`)
-    const grammarOutputPath = join(tmpdir(), `ink-grammar-output-${Date.now()}.json`)
+    const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const wrapperPath = join(tmpdir(), `ink-grammar-wrapper-${uid}.mjs`)
+    const grammarOutputPath = join(tmpdir(), `ink-grammar-output-${uid}.json`)
 
     const entryUrl = pathToFileURL(entryPath).href
     writeFileSync(wrapperPath, `
