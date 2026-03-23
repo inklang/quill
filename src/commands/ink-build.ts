@@ -22,8 +22,6 @@ export class InkBuildCommand {
       version: manifest.version,
     }
 
-    // TODO: compile *.ink → *.inkc to dist/
-
     // Grammar compilation
     if (manifest.grammar) {
       await this.buildGrammar(manifest.name, manifest.grammar.entry, manifest.grammar.output)
@@ -102,6 +100,43 @@ export class InkBuildCommand {
           entry: manifest.runtime.entry,
         }
         console.log(`Runtime jar copied to dist/${jarFilename}`)
+      }
+    }
+
+    // Compile .ink scripts
+    const scriptsDir = join(this.projectDir, 'scripts')
+    if (existsSync(scriptsDir)) {
+      const inkFiles = readdirSync(scriptsDir).filter(f => f.endsWith('.ink'))
+      if (inkFiles.length > 0) {
+        const compiler = process.env['INK_COMPILER'] || ''
+        if (!compiler) {
+          console.error('Ink compiler not found. Set INK_COMPILER or [build] compiler in ink-package.toml.')
+          process.exit(1)
+        }
+
+        const outDir = join(distDir, 'scripts')
+        mkdirSync(outDir, { recursive: true })
+
+        const grammarIrPath = join(distDir, 'grammar.ir.json')
+        const javaCmd = (process.env['INK_JAVA'] || 'java').replace(/\\/g, '/')
+        const compilerPath = compiler.replace(/\\/g, '/')
+        const grammarIrPathFwd = grammarIrPath.replace(/\\/g, '/')
+        const scriptsDirFwd = scriptsDir.replace(/\\/g, '/')
+        const outDirFwd = outDir.replace(/\\/g, '/')
+        try {
+          execSync(
+            `"${javaCmd}" -jar "${compilerPath}" compile --grammar "${grammarIrPathFwd}" --sources "${scriptsDirFwd}" --out "${outDirFwd}"`,
+            { cwd: this.projectDir, stdio: 'pipe', shell: process.env['SHELL'] || true }
+          )
+        } catch (e: any) {
+          const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '')
+          console.error('Ink compilation failed:\n' + output)
+          process.exit(1)
+        }
+
+        const compiledFiles = readdirSync(outDir).filter(f => f.endsWith('.inkc'))
+        inkManifest.scripts = compiledFiles
+        console.log(`Compiled ${compiledFiles.length} script(s)`)
       }
     }
 
