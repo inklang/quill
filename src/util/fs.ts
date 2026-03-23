@@ -33,6 +33,15 @@ export class FileUtils {
   }
 
   /**
+   * Pack files into a tar.gz archive.
+   */
+  static async packTarGz(sourceDir: string, destPath: string, includes: string[]): Promise<void> {
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    const includeArgs = includes.map(i => `"${i}"`).join(' ');
+    await execAsync(`tar -czf "${toMsysPath(destPath)}" ${includeArgs}`, { cwd: sourceDir });
+  }
+
+  /**
    * Delete a directory recursively.
    */
   static deleteDirectory(dirPath: string): void {
