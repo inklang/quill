@@ -1,5 +1,8 @@
 import { Semver } from '../model/semver.js';
 import { SemverRange } from '../model/semver.js';
+import path from 'path';
+import fs from 'fs';
+import os from 'os';
 
 export class RegistryPackageVersion {
   constructor(
@@ -20,6 +23,20 @@ export class RegistryClient {
   constructor(
     public readonly registryUrl: string = process.env['LECTERN_REGISTRY'] ?? 'https://packages.inklang.org'
   ) {}
+
+  readAuthToken(): string | null {
+    const envToken = process.env['QUILL_TOKEN']
+    if (envToken) return envToken
+
+    const rcPath = path.join(os.homedir(), '.quillrc')
+    if (fs.existsSync(rcPath)) {
+      const content = fs.readFileSync(rcPath, 'utf8').trim()
+      const match = content.match(/^token\s*=\s*(.+)$/m)
+      if (match) return match[1].trim()
+    }
+
+    return null
+  }
 
   async fetchIndex(): Promise<object> {
     const url = `${this.registryUrl}/index.json`;

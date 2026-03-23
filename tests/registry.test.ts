@@ -79,4 +79,29 @@ describe('RegistryClient', () => {
       expect(result?.version).toBe('1.0.0');
     });
   });
+
+  describe('readAuthToken', () => {
+    it('reads token from QUILL_TOKEN env var', () => {
+      const original = process.env['QUILL_TOKEN']
+      process.env['QUILL_TOKEN'] = 'test-token-123'
+      try {
+        const client = new RegistryClient()
+        expect(client.readAuthToken()).toBe('test-token-123')
+      } finally {
+        if (original !== undefined) process.env['QUILL_TOKEN'] = original
+        else delete process.env['QUILL_TOKEN']
+      }
+    })
+
+    it('returns null when no token is available', () => {
+      const original = process.env['QUILL_TOKEN']
+      delete process.env['QUILL_TOKEN']
+      try {
+        const client = new RegistryClient()
+        expect(client.readAuthToken()).toBeNull()
+      } finally {
+        if (original !== undefined) process.env['QUILL_TOKEN'] = original
+      }
+    })
+  });
 });
