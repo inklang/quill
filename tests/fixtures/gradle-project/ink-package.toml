@@ -1,0 +1,14 @@
+[package]
+name = "ink.gradletest"
+version = "0.1.0"
+main = "mod"
+
+[dependencies]
+
+[grammar]
+entry = "src/grammar.ts"
+output = "dist/grammar.ir.json"
+
+[runtime]
+jar = "runtime/build/libs/ink.gradletest-0.1.0.jar"
+entry = "ink.gradletest.GradletestRuntime"

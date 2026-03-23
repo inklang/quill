@@ -3,7 +3,7 @@ import { TomlParser } from '../util/toml.js'
 import { AuthoredGrammar } from '../grammar/api.js'
 import { serialize } from '../grammar/serializer.js'
 import { validate } from '../grammar/validator.js'
-import { writeFileSync, mkdirSync, unlinkSync, readFileSync, existsSync, copyFileSync } from 'fs'
+import { writeFileSync, mkdirSync, unlinkSync, readFileSync, existsSync, copyFileSync, readdirSync } from 'fs'
 import { join, dirname, basename } from 'path'
 import { execSync } from 'child_process'
 import { tmpdir } from 'os'
@@ -30,20 +30,79 @@ export class InkBuildCommand {
       inkManifest.grammar = 'grammar.ir.json'
     }
 
-    // Runtime jar validation + copy
+    // Runtime: Gradle build or external JAR copy
     if (manifest.runtime) {
-      const jarSource = join(this.projectDir, manifest.runtime.jar)
-      if (!existsSync(jarSource)) {
-        console.error(`Runtime jar not found: ${manifest.runtime.jar} — build it with Gradle first`)
-        process.exit(1)
+      const runtimeDir = join(this.projectDir, 'runtime')
+      const gradleFile = join(runtimeDir, 'build.gradle.kts')
+
+      if (existsSync(gradleFile)) {
+        // Determine gradle command: prefer wrapper, fall back to system gradle
+        let gradleCmd = 'gradle'
+        const isWindows = process.platform === 'win32'
+        const wrapperBat = join(runtimeDir, 'gradlew.bat')
+        const wrapperSh = join(runtimeDir, 'gradlew')
+
+        let gradleArgs = 'build'
+        if (isWindows && existsSync(wrapperBat)) {
+          gradleCmd = wrapperBat
+        } else if (existsSync(wrapperSh)) {
+          if (isWindows) {
+            // On Windows, invoke the bash wrapper via bash
+            gradleCmd = 'bash'
+            gradleArgs = `"${wrapperSh.replace(/\\/g, '/')}" build`
+          } else {
+            gradleCmd = wrapperSh
+          }
+        }
+
+        console.log(`Running Gradle build in runtime/...`)
+        try {
+          execSync(`"${gradleCmd}" ${gradleArgs}`, { cwd: runtimeDir, stdio: 'pipe' })
+        } catch (e: any) {
+          const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '')
+          console.error('Gradle build failed:\n' + output)
+          process.exit(1)
+        }
+        console.log('Gradle build successful')
+
+        // Find output JAR in runtime/build/libs/
+        const libsDir = join(runtimeDir, 'build/libs')
+        if (!existsSync(libsDir)) {
+          console.error('Gradle build produced no output: runtime/build/libs/ not found')
+          process.exit(1)
+        }
+        const jars = readdirSync(libsDir).filter(f => f.endsWith('.jar'))
+        if (jars.length === 0) {
+          console.error('No JAR found in runtime/build/libs/')
+          process.exit(1)
+        }
+        if (jars.length > 1) {
+          console.error(`Multiple JARs found in runtime/build/libs/: ${jars.join(', ')}. Expected exactly one.`)
+          process.exit(1)
+        }
+
+        const jarFilename = jars[0]
+        copyFileSync(join(libsDir, jarFilename), join(distDir, jarFilename))
+        inkManifest.runtime = {
+          jar: jarFilename,
+          entry: manifest.runtime.entry,
+        }
+        console.log(`Runtime jar copied to dist/${jarFilename}`)
+      } else {
+        // External JAR path — copy directly
+        const jarSource = join(this.projectDir, manifest.runtime.jar)
+        if (!existsSync(jarSource)) {
+          console.error(`Runtime jar not found: ${manifest.runtime.jar} — build it with Gradle first`)
+          process.exit(1)
+        }
+        const jarFilename = basename(manifest.runtime.jar)
+        copyFileSync(jarSource, join(distDir, jarFilename))
+        inkManifest.runtime = {
+          jar: jarFilename,
+          entry: manifest.runtime.entry,
+        }
+        console.log(`Runtime jar copied to dist/${jarFilename}`)
       }
-      const jarFilename = basename(manifest.runtime.jar)
-      copyFileSync(jarSource, join(distDir, jarFilename))
-      inkManifest.runtime = {
-        jar: jarFilename,
-        entry: manifest.runtime.entry,
-      }
-      console.log(`Runtime jar copied to dist/${jarFilename}`)
     }
 
     // Write ink-manifest.json
