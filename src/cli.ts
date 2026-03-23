@@ -10,6 +10,7 @@ import { CleanCommand } from './commands/clean.js';
 import { InkBuildCommand } from './commands/ink-build.js'
 import { InkCheckCommand } from './commands/ink-check.js'
 import { PublishCommand } from './commands/publish.js'
+import { WatchCommand } from './commands/watch.js'
 
 const program = new Command();
 const projectDir = process.cwd();
@@ -68,6 +69,14 @@ program
   .description('Publish package to the registry')
   .action(async () => {
     const cmd = new PublishCommand(process.cwd())
+    await cmd.run()
+  })
+
+program
+  .command('watch')
+  .description('Watch for file changes and rebuild')
+  .action(async () => {
+    const cmd = new WatchCommand(process.cwd())
     await cmd.run()
   })
 
