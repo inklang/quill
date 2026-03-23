@@ -1,0 +1,2 @@
+# Ensure shell scripts always use LF in the repo
+tests/fixtures/**/*gradlew text eol=lf
