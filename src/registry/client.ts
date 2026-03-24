@@ -21,7 +21,7 @@ export class RegistryPackage {
 
 export class RegistryClient {
   constructor(
-    public readonly registryUrl: string = process.env['LECTERN_REGISTRY'] ?? 'https://packages.inklang.org'
+    public readonly registryUrl: string = process.env['LECTERN_REGISTRY'] ?? 'https://lectern.inklang.org'
   ) {}
 
   readAuthToken(): string | null {
