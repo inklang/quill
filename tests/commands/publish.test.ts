@@ -22,7 +22,7 @@ describe('quill publish', () => {
       expect.unreachable('should have thrown')
     } catch (e: any) {
       const output = e.stderr.toString()
-      expect(output).toContain('Set QUILL_TOKEN or add token to ~/.quillrc')
+      expect(output).toContain('Not logged in. Run `quill login` first.')
     }
   })
 })
