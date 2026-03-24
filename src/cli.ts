@@ -20,7 +20,7 @@ const projectDir = process.cwd();
 program
   .name('quill')
   .description('Package manager for the Ink programming language')
-  .version('0.1.3');
+  .version('0.2.0');
 
 program
   .command('new <name>')
