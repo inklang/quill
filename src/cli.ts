@@ -12,6 +12,7 @@ import { InkCheckCommand } from './commands/ink-check.js'
 import { PublishCommand } from './commands/publish.js'
 import { WatchCommand } from './commands/watch.js'
 import { LoginCommand } from './commands/login.js'
+import { UpdateCommand } from './commands/update.js'
 
 const program = new Command();
 const projectDir = process.cwd();
@@ -40,6 +41,13 @@ program.command('remove <pkg>').description('Uninstall a package').action(async 
 program.command('install').description('Install all dependencies from quill.toml').action(async () => {
   await new InstallCommand(projectDir).run();
 });
+
+program
+  .command('update [packages...]')
+  .description('Update dependencies to latest matching version')
+  .action(async (packages: string[]) => {
+    await new UpdateCommand(projectDir).run(packages)
+  });
 
 program.command('ls').description('List installed packages').action(async () => {
   await new LsCommand(projectDir).run();
