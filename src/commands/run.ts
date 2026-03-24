@@ -31,6 +31,44 @@ export function resolveServerDir(
   return join(homedir(), '.quill', 'server')
 }
 
+/**
+ * Exported for testing. Clears and repopulates the server scripts directory
+ * from dist/scripts/ in the project directory.
+ */
+export function deployScripts(serverDir: string, projectDir: string): void {
+  const scriptsDir = join(serverDir, 'plugins', 'Ink', 'scripts')
+  // Clear entirely before copying — removes stale scripts from previous deploys
+  rmSync(scriptsDir, { recursive: true, force: true })
+  mkdirSync(scriptsDir, { recursive: true })
+
+  const distScripts = join(projectDir, 'dist', 'scripts')
+  if (!existsSync(distScripts)) return
+
+  for (const f of readdirSync(distScripts).filter(f => f.endsWith('.inkc'))) {
+    copyFileSync(join(distScripts, f), join(scriptsDir, f))
+  }
+}
+
+/**
+ * Exported for testing. Copies grammar JARs from packages/*\/dist/*.jar into
+ * the server's plugins/Ink/plugins/ directory.
+ */
+export function deployGrammarJars(serverDir: string, projectDir: string): void {
+  const targetDir = join(serverDir, 'plugins', 'Ink', 'plugins')
+  mkdirSync(targetDir, { recursive: true })
+
+  const packagesDir = join(projectDir, 'packages')
+  if (!existsSync(packagesDir)) return
+
+  for (const pkgName of readdirSync(packagesDir)) {
+    const pkgDist = join(packagesDir, pkgName, 'dist')
+    if (!existsSync(pkgDist)) continue
+    for (const jar of readdirSync(pkgDist).filter(f => f.endsWith('.jar'))) {
+      copyFileSync(join(pkgDist, jar), join(targetDir, jar))
+    }
+  }
+}
+
 export class RunCommand {
   private manifest!: PackageManifest
   private serverDir!: string
@@ -232,6 +270,11 @@ export class RunCommand {
       process.exit(1)
     }
 
+    if (!buildsData!.builds.length) {
+      console.error(`No Paper builds found for version ${version}. Check that the version is valid.`)
+      process.exit(1)
+    }
+
     const build = buildsData!.builds[buildsData!.builds.length - 1].build
     const jarName = `paper-${version}-${build}.jar`
     const jarUrl = `https://api.papermc.io/v2/projects/paper/versions/${version}/builds/${build}/downloads/${jarName}`
@@ -249,33 +292,11 @@ export class RunCommand {
   }
 
   private deployScripts(): void {
-    const scriptsDir = join(this.serverDir, 'plugins', 'Ink', 'scripts')
-    // Clear entirely before copying — removes stale scripts from previous deploys
-    rmSync(scriptsDir, { recursive: true, force: true })
-    mkdirSync(scriptsDir, { recursive: true })
-
-    const distScripts = join(this.projectDir, 'dist', 'scripts')
-    if (!existsSync(distScripts)) return
-
-    for (const f of readdirSync(distScripts).filter(f => f.endsWith('.inkc'))) {
-      copyFileSync(join(distScripts, f), join(scriptsDir, f))
-    }
+    deployScripts(this.serverDir, this.projectDir)
   }
 
   private deployGrammarJars(): void {
-    const targetDir = join(this.serverDir, 'plugins', 'Ink', 'plugins')
-    mkdirSync(targetDir, { recursive: true })
-
-    const packagesDir = join(this.projectDir, 'packages')
-    if (!existsSync(packagesDir)) return
-
-    for (const pkgName of readdirSync(packagesDir)) {
-      const pkgDist = join(packagesDir, pkgName, 'dist')
-      if (!existsSync(pkgDist)) continue
-      for (const jar of readdirSync(pkgDist).filter(f => f.endsWith('.jar'))) {
-        copyFileSync(join(pkgDist, jar), join(targetDir, jar))
-      }
-    }
+    deployGrammarJars(this.serverDir, this.projectDir)
   }
 
   private spawnServer(paperJarPath: string): ChildProcess {

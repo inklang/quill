@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { resolveServerDir } from '../../src/commands/run.js';
+import { resolveServerDir, deployScripts, deployGrammarJars } from '../../src/commands/run.js';
 
 const tmpDir = path.join(os.tmpdir(), 'quill-run-test-' + Date.now());
 
@@ -77,21 +77,17 @@ describe('setup file guards', () => {
 
 describe('deployScripts', () => {
   it('clears the scripts dir entirely before copying new .inkc files', () => {
+    // Pre-populate a stale script in the server scripts dir
     const serverScripts = path.join(tmpDir, 'plugins', 'Ink', 'scripts');
     fs.mkdirSync(serverScripts, { recursive: true });
     fs.writeFileSync(path.join(serverScripts, 'stale.inkc'), 'old content');
 
-    // Simulate deployScripts: clear then copy
-    fs.rmSync(serverScripts, { recursive: true, force: true });
-    fs.mkdirSync(serverScripts, { recursive: true });
-
+    // Place a new compiled script in dist/scripts
     const distScripts = path.join(tmpDir, 'dist', 'scripts');
     fs.mkdirSync(distScripts, { recursive: true });
     fs.writeFileSync(path.join(distScripts, 'main.inkc'), 'compiled');
 
-    for (const f of fs.readdirSync(distScripts).filter(f => f.endsWith('.inkc'))) {
-      fs.copyFileSync(path.join(distScripts, f), path.join(serverScripts, f));
-    }
+    deployScripts(tmpDir, tmpDir);
 
     const deployed = fs.readdirSync(serverScripts);
     expect(deployed).toContain('main.inkc');
@@ -99,22 +95,16 @@ describe('deployScripts', () => {
   });
 
   it('deploys grammar JARs from packages/*/dist/*.jar to plugins/Ink/plugins/', () => {
+    // Ensure the server plugin directory exists
     const targetDir = path.join(tmpDir, 'plugins', 'Ink', 'plugins');
     fs.mkdirSync(targetDir, { recursive: true });
 
+    // Place a grammar JAR in a package dist dir
     const pkgDist = path.join(tmpDir, 'packages', 'ink.mobs', 'dist');
     fs.mkdirSync(pkgDist, { recursive: true });
     fs.writeFileSync(path.join(pkgDist, 'ink.mobs-0.1.0.jar'), 'jar-bytes');
 
-    // Simulate deployGrammarJars
-    const packagesDir = path.join(tmpDir, 'packages');
-    for (const pkgName of fs.readdirSync(packagesDir)) {
-      const dist = path.join(packagesDir, pkgName, 'dist');
-      if (!fs.existsSync(dist)) continue;
-      for (const jar of fs.readdirSync(dist).filter(f => f.endsWith('.jar'))) {
-        fs.copyFileSync(path.join(dist, jar), path.join(targetDir, jar));
-      }
-    }
+    deployGrammarJars(tmpDir, tmpDir);
 
     expect(fs.existsSync(path.join(targetDir, 'ink.mobs-0.1.0.jar'))).toBe(true);
   });
