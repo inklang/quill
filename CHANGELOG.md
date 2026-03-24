@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.2 — 2026-03-24
+
+### Changed
+
+- `add`, `remove`, `install`, `update`, `ls`, `clean`, `build`, `check`, `watch`, and `publish` now error immediately if run outside an Ink project directory (no `ink-package.toml` found)
+
 ## 0.2.1 — 2026-03-24
 
 ### Changed

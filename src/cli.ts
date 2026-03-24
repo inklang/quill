@@ -13,14 +13,24 @@ import { PublishCommand } from './commands/publish.js'
 import { WatchCommand } from './commands/watch.js'
 import { LoginCommand, LogoutCommand } from './commands/login.js'
 import { UpdateCommand } from './commands/update.js'
+import { existsSync } from 'fs'
+import { join } from 'path'
 
 const program = new Command();
 const projectDir = process.cwd();
 
+function requireProject(): void {
+  if (!existsSync(join(projectDir, 'ink-package.toml'))) {
+    console.error('Error: No ink-package.toml found in current directory.')
+    console.error("Run 'quill init' to initialize a project here, or 'quill new <name>' to create a new one.")
+    process.exit(1)
+  }
+}
+
 program
   .name('quill')
   .description('Package manager for the Ink programming language')
-  .version('0.2.1');
+  .version('0.2.2');
 
 program
   .command('new <name>')
@@ -44,14 +54,17 @@ program.command('init').description('Initialize quill.toml in existing project')
 });
 
 program.command('add <pkg>').description('Install a package').action(async (pkg) => {
+  requireProject()
   await new AddCommand(projectDir).run(pkg);
 });
 
 program.command('remove <pkg>').description('Uninstall a package').action(async (pkg) => {
+  requireProject()
   await new RemoveCommand(projectDir).run(pkg);
 });
 
 program.command('install').description('Install all dependencies from quill.toml').action(async () => {
+  requireProject()
   await new InstallCommand(projectDir).run();
 });
 
@@ -59,14 +72,17 @@ program
   .command('update [packages...]')
   .description('Update dependencies to latest matching version')
   .action(async (packages: string[]) => {
+    requireProject()
     await new UpdateCommand(projectDir).run(packages)
   });
 
 program.command('ls').description('List installed packages').action(async () => {
+  requireProject()
   await new LsCommand(projectDir).run();
 });
 
 program.command('clean').description('Remove .quill-cache/').action(async () => {
+  requireProject()
   await new CleanCommand(projectDir).run();
 });
 
@@ -74,6 +90,7 @@ program
   .command('build')
   .description('Compile grammar and/or Ink scripts')
   .action(async () => {
+    requireProject()
     const cmd = new InkBuildCommand(process.cwd())
     await cmd.run()
   })
@@ -82,6 +99,7 @@ program
   .command('check')
   .description('Check grammar and Ink script for errors')
   .action(async () => {
+    requireProject()
     const cmd = new InkCheckCommand(process.cwd())
     await cmd.run()
   })
@@ -90,6 +108,7 @@ program
   .command('publish')
   .description('Publish package to the registry')
   .action(async () => {
+    requireProject()
     const cmd = new PublishCommand(process.cwd())
     await cmd.run()
   })
@@ -112,6 +131,7 @@ program
   .command('watch')
   .description('Watch for file changes and rebuild')
   .action(async () => {
+    requireProject()
     const cmd = new WatchCommand(process.cwd())
     await cmd.run()
   })
