@@ -39,16 +39,45 @@ export class PublishCommand {
 
     const tarball = readFileSync(tarballPath)
 
+    const description: string | undefined = manifest.description
+    const readmePath = join(this.projectDir, 'README.md')
+    const readme = existsSync(readmePath) ? readFileSync(readmePath, 'utf-8') : undefined
+
+    const boundary = '----QuillPublishBoundary'
+    const parts: Buffer[] = []
+
+    // tarball part
+    parts.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="tarball"; filename="package.tar.gz"\r\nContent-Type: application/gzip\r\n\r\n`
+    ))
+    parts.push(tarball)
+    parts.push(Buffer.from('\r\n'))
+
+    if (description) {
+      parts.push(Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="description"\r\n\r\n${description}\r\n`
+      ))
+    }
+
+    if (readme) {
+      parts.push(Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="readme"\r\n\r\n${readme}\r\n`
+      ))
+    }
+
+    parts.push(Buffer.from(`--${boundary}--\r\n`))
+    const body = Buffer.concat(parts)
+
     const client = new RegistryClient()
     const url = `${client.registryUrl}/api/packages/${manifest.name}/${manifest.version}`
 
     const res = await fetch(url, {
       method: 'PUT',
       headers: {
-        'Content-Type': 'application/gzip',
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
         'Authorization': `Bearer ${rc.token}`,
       },
-      body: new Blob([tarball]),
+      body,
     })
 
     if (!res.ok) {
