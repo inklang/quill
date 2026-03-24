@@ -18,7 +18,7 @@ export class AddCommand {
 
     const manifest = fs.existsSync(inkPackageTomlPath)
       ? TomlParser.read(inkPackageTomlPath)
-      : { name: path.basename(this.projectDir), version: '0.1.0', entry: 'main', dependencies: {} };
+      : { name: path.basename(this.projectDir), version: '0.1.0', main: 'main', dependencies: {} };
 
     if (pkgName in manifest.dependencies) {
       console.log(`${pkgName} is already in dependencies.`);

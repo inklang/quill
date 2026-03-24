@@ -7,7 +7,10 @@ import { writeFileSync, mkdirSync, unlinkSync, readFileSync, existsSync, copyFil
 import { join, dirname, basename } from 'path'
 import { execSync } from 'child_process'
 import { tmpdir } from 'os'
-import { pathToFileURL } from 'url'
+import { pathToFileURL, fileURLToPath } from 'url'
+
+// Quill's own node_modules so grammar files can resolve @inklang/quill/grammar
+const quillNodeModules = join(fileURLToPath(new URL('../..', import.meta.url)), 'node_modules')
 
 export class InkBuildCommand {
   constructor(private projectDir: string) {}
@@ -108,25 +111,48 @@ export class InkBuildCommand {
     if (existsSync(scriptsDir)) {
       const inkFiles = readdirSync(scriptsDir).filter(f => f.endsWith('.ink'))
       if (inkFiles.length > 0) {
-        const compiler = process.env['INK_COMPILER'] || ''
+        const compiler = this.resolveCompiler()
         if (!compiler) {
-          console.error('Ink compiler not found. Set INK_COMPILER or [build] compiler in ink-package.toml.')
+          console.error(
+            'Ink compiler not found. Specify one of:\n' +
+            '  • [build] compiler = "path/to/ink.jar"  in ink-package.toml\n' +
+            '  • INK_COMPILER=path/to/ink.jar  environment variable'
+          )
           process.exit(1)
         }
 
         const outDir = join(distDir, 'scripts')
         mkdirSync(outDir, { recursive: true })
 
-        const grammarIrPath = join(distDir, 'grammar.ir.json')
+        // Collect grammar IR files: current package + all installed packages
+        const grammarArgs: string[] = []
+        const ownGrammarIr = join(distDir, 'grammar.ir.json')
+        if (existsSync(ownGrammarIr)) {
+          grammarArgs.push(ownGrammarIr)
+        }
+        const packagesDir = join(this.projectDir, 'packages')
+        if (existsSync(packagesDir)) {
+          for (const pkgName of readdirSync(packagesDir)) {
+            const pkgGrammar = join(packagesDir, pkgName, 'dist', 'grammar.ir.json')
+            if (existsSync(pkgGrammar)) {
+              grammarArgs.push(pkgGrammar)
+              console.log(`Using grammar from installed package: ${pkgName}`)
+            }
+          }
+        }
+
         const javaCmd = (process.env['INK_JAVA'] || 'java').replace(/\\/g, '/')
         const compilerPath = compiler.replace(/\\/g, '/')
-        const grammarIrPathFwd = grammarIrPath.replace(/\\/g, '/')
         const scriptsDirFwd = scriptsDir.replace(/\\/g, '/')
         const outDirFwd = outDir.replace(/\\/g, '/')
+        const grammarFlags = grammarArgs
+          .map(p => `--grammar "${p.replace(/\\/g, '/')}"`)
+          .join(' ')
+
         try {
           execSync(
-            `"${javaCmd}" -jar "${compilerPath}" compile --grammar "${grammarIrPathFwd}" --sources "${scriptsDirFwd}" --out "${outDirFwd}"`,
-            { cwd: this.projectDir, stdio: 'pipe', shell: process.env['SHELL'] || true }
+            `"${javaCmd}" -jar "${compilerPath}" compile ${grammarFlags} --sources "${scriptsDirFwd}" --out "${outDirFwd}"`,
+            { cwd: this.projectDir, stdio: 'pipe' } as any
           )
         } catch (e: any) {
           const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '')
@@ -145,6 +171,34 @@ export class InkBuildCommand {
     console.log('Wrote dist/ink-manifest.json')
   }
 
+  private resolveCompiler(): string | null {
+    const tryPath = (p: string): string | null => {
+      if (existsSync(p)) return p
+      // Convert MSYS2/Git Bash paths (/c/foo) to Windows paths (C:/foo)
+      const msys = p.match(/^\/([a-zA-Z])\/(.*)$/)
+      if (msys) {
+        const win = `${msys[1].toUpperCase()}:/${msys[2]}`
+        if (existsSync(win)) return win
+      }
+      return null
+    }
+
+    // 1. Bundled with quill: <quill-root>/compiler/ink.jar
+    const quillRoot = fileURLToPath(new URL('../..', import.meta.url))
+    const bundled = join(quillRoot, 'compiler', 'ink.jar')
+    const r1 = tryPath(bundled)
+    if (r1) return r1
+
+    // 2. INK_COMPILER env var (dev override)
+    const envCompiler = process.env['INK_COMPILER']
+    if (envCompiler) {
+      const r = tryPath(envCompiler)
+      if (r) return r
+    }
+
+    return null
+  }
+
   private async buildGrammar(packageName: string, grammarEntry: string, grammarOutput: string): Promise<void> {
     const entryPath = join(this.projectDir, grammarEntry)
     const outputPath = join(this.projectDir, grammarOutput)
@@ -152,6 +206,16 @@ export class InkBuildCommand {
     const uid = `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const wrapperPath = join(tmpdir(), `ink-grammar-wrapper-${uid}.mjs`)
     const grammarOutputPath = join(tmpdir(), `ink-grammar-output-${uid}.json`)
+    const tsconfigPath = join(tmpdir(), `ink-grammar-tsconfig-${uid}.json`)
+
+    const quillGrammarApi = join(fileURLToPath(new URL('../..', import.meta.url)), 'src/grammar/api.ts')
+    writeFileSync(tsconfigPath, JSON.stringify({
+      compilerOptions: {
+        module: 'ESNext',
+        moduleResolution: 'Bundler',
+        paths: { '@inklang/quill/grammar': [quillGrammarApi] }
+      }
+    }))
 
     const entryUrl = pathToFileURL(entryPath).href
     writeFileSync(wrapperPath, `
@@ -162,12 +226,16 @@ writeFileSync('${grammarOutputPath.replace(/\\/g, '\\\\')}', result);
 `.trim())
 
     try {
-      execSync(`npx tsx ${wrapperPath}`, { cwd: this.projectDir, stdio: 'pipe' })
+      execSync(`npx tsx --tsconfig "${tsconfigPath}" ${wrapperPath}`, {
+        cwd: this.projectDir,
+        stdio: 'pipe',
+      })
     } catch (e) {
       console.error(`Failed to load grammar file: ${entryPath}`)
       process.exit(1)
     } finally {
       try { unlinkSync(wrapperPath) } catch {}
+      try { unlinkSync(tsconfigPath) } catch {}
     }
 
     let defaultExport: AuthoredGrammar
