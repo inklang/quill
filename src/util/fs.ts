@@ -24,6 +24,21 @@ export class FileUtils {
   }
 
   /**
+   * Download a file atomically: stream to dest+'.tmp', then rename on success.
+   * Uses fetch() which auto-follows HTTP redirects (required for GitHub releases URLs).
+   * If interrupted, the .tmp file is left behind and will be retried on next call.
+   */
+  static async downloadFileAtomic(url: string, destPath: string): Promise<void> {
+    const tmpPath = destPath + '.tmp';
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Failed to download ${url}: ${res.status}`);
+    const buf = await res.arrayBuffer();
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    fs.writeFileSync(tmpPath, Buffer.from(buf));
+    fs.renameSync(tmpPath, destPath);
+  }
+
+  /**
    * Pack files into a tar.gz archive.
    */
   static async packTarGz(sourceDir: string, destPath: string, includes: string[]): Promise<void> {
