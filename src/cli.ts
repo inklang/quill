@@ -11,7 +11,7 @@ import { InkBuildCommand } from './commands/ink-build.js'
 import { InkCheckCommand } from './commands/ink-check.js'
 import { PublishCommand } from './commands/publish.js'
 import { WatchCommand } from './commands/watch.js'
-import { LoginCommand } from './commands/login.js'
+import { LoginCommand, LogoutCommand } from './commands/login.js'
 import { UpdateCommand } from './commands/update.js'
 
 const program = new Command();
@@ -20,7 +20,7 @@ const projectDir = process.cwd();
 program
   .name('quill')
   .description('Package manager for the Ink programming language')
-  .version('0.1.0');
+  .version('0.1.3');
 
 program.command('new <name>').description('Scaffold a new package').action(async (name) => {
   await new NewCommand(projectDir).run(name);
@@ -86,6 +86,13 @@ program
   .description('Generate a keypair and register with the registry')
   .action(async () => {
     await new LoginCommand().run()
+  })
+
+program
+  .command('logout')
+  .description('Remove saved keypair from ~/.quillrc')
+  .action(() => {
+    new LogoutCommand().run()
   })
 
 program

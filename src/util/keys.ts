@@ -69,3 +69,7 @@ export function writeRc(rc: QuillRc): void {
   if (rc.registry) lines.push(`registry = ${rc.registry}`)
   fs.writeFileSync(rcPath, lines.join('\n') + '\n', { mode: 0o600 })
 }
+
+export function clearRc(): void {
+  if (fs.existsSync(rcPath)) fs.unlinkSync(rcPath)
+}

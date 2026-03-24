@@ -1,15 +1,7 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-
-const execAsync = promisify(exec);
-
-// Convert Windows path to MSYS-compatible path for tar
-function toMsysPath(winPath: string): string {
-  return winPath.replace(/\\/g, '/').replace(/^([A-Za-z]):/, '/$1');
-}
+import * as tar from 'tar';
 
 export class FileUtils {
   /**
@@ -17,8 +9,7 @@ export class FileUtils {
    */
   static async extractTarGz(tarballPath: string, destDir: string): Promise<void> {
     fs.mkdirSync(destDir, { recursive: true });
-    // Use tar CLI — most portable across platforms
-    await execAsync(`tar -xzf "${toMsysPath(tarballPath)}" -C "${toMsysPath(destDir)}"`);
+    await tar.x({ file: tarballPath, cwd: destDir });
   }
 
   /**
@@ -37,8 +28,7 @@ export class FileUtils {
    */
   static async packTarGz(sourceDir: string, destPath: string, includes: string[]): Promise<void> {
     fs.mkdirSync(path.dirname(destPath), { recursive: true });
-    const includeArgs = includes.map(i => `"${i}"`).join(' ');
-    await execAsync(`tar -czf "${toMsysPath(destPath)}" ${includeArgs}`, { cwd: sourceDir });
+    await tar.c({ gzip: true, file: destPath, cwd: sourceDir }, includes);
   }
 
   /**

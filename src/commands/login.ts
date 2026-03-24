@@ -1,5 +1,18 @@
 import { RegistryClient } from '../registry/client.js'
-import { generateKeyPair, fingerprint, writeRc, readRc } from '../util/keys.js'
+import { generateKeyPair, fingerprint, writeRc, readRc, clearRc } from '../util/keys.js'
+
+export class LogoutCommand {
+  run(): void {
+    const existing = readRc()
+    if (!existing.privateKey && !existing.publicKey) {
+      console.log('Not logged in.')
+      return
+    }
+    const fp = fingerprint(existing.publicKey!)
+    clearRc()
+    console.log(`Logged out. Removed keypair ${fp} from ~/.quillrc`)
+  }
+}
 
 export class LoginCommand {
   async run(): Promise<void> {
@@ -18,11 +31,17 @@ export class LoginCommand {
     const client = new RegistryClient()
     console.log(`Registering public key with ${client.registryUrl}...`)
 
-    const res = await fetch(`${client.registryUrl}/api/auth/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ publicKey: kp.publicKey, fingerprint: fp }),
-    })
+    let res: Response
+    try {
+      res = await fetch(`${client.registryUrl}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ publicKey: kp.publicKey, fingerprint: fp }),
+      })
+    } catch (err: any) {
+      console.error(`Could not reach registry: ${err.cause?.message ?? err.message}`)
+      process.exit(1)
+    }
 
     if (!res.ok) {
       const body = await res.text()
