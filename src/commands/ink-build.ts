@@ -143,23 +143,21 @@ export class InkBuildCommand {
             process.exit(1)
           }
         } else {
-          // ink.jar mode (existing, uses --grammar flags)
+          // ink.jar batch mode (uses --grammar flags)
           const javaCmd = (process.env['INK_JAVA'] || 'java').replace(/\\/g, '/')
-          for (const inkFile of inkFiles) {
-            const inputPath = join(scriptsDir, inkFile).replace(/\\/g, '/')
-            const outputFile = inkFile.replace(/\.ink$/, '.inkc')
-            const outputPath = join(outDir, outputFile).replace(/\\/g, '/')
+          const grammarFlags = inkManifest.grammar
+            ? `--grammar "${join(distDir, inkManifest.grammar as string).replace(/\\/g, '/')}" `
+            : ''
 
-            try {
-              execSync(
-                `"${javaCmd}" -jar "${compilerPath}" compile "${inputPath}" -o "${outputPath}"`,
-                { cwd: this.projectDir, stdio: 'pipe' } as any
-              )
-            } catch (e: any) {
-              const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '')
-              console.error(`Ink compilation failed for ${inkFile}:\n` + output)
-              process.exit(1)
-            }
+          try {
+            execSync(
+              `"${javaCmd}" -jar "${compilerPath}" compile ${grammarFlags}--sources "${scriptsDirFwd}" --out "${outDirFwd}"`,
+              { cwd: this.projectDir, stdio: 'pipe' } as any
+            )
+          } catch (e: any) {
+            const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '')
+            console.error('Ink compilation failed:\n' + output)
+            process.exit(1)
           }
         }
 
