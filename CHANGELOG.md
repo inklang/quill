@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2 — 2026-03-24
+
+### Fixed
+
+- `quill run` now passes stdin through to the Paper server so you can type commands into the console.
+
 ## 0.3.1 — 2026-03-24
 
 ### Fixed

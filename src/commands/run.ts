@@ -302,7 +302,7 @@ export class RunCommand {
   private spawnServer(paperJarPath: string): ChildProcess {
     const server = spawn('java', ['-jar', paperJarPath, '--nogui'], {
       cwd: this.serverDir,
-      stdio: ['pipe', 'inherit', 'inherit'],
+      stdio: 'inherit',
     })
     server.on('error', (err: any) => {
       if (err.code === 'ENOENT') {
