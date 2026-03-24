@@ -16,6 +16,10 @@ function templateContent(name: string, template: Template): string {
       return `print("Hello, world!")\n`;
     case 'full':
       return `// ${name} v0.1.0\n\nfn greet(name) {\n  print("Hello, " + name + "!")\n}\n\ngreet("world")\n`;
+    default: {
+      const _: never = template;
+      throw new Error(`Unknown template: ${template}`);
+    }
   }
 }
 
@@ -38,6 +42,10 @@ async function promptTemplate(): Promise<Template> {
 
   return new Promise((resolve) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    rl.once('SIGINT', () => {
+      rl.close();
+      process.exit(130);
+    });
     const ask = () => {
       rl.question('\nEnter number (default: 1): ', (answer) => {
         const t = answer.trim();
@@ -115,6 +123,7 @@ export class NewCommand {
 
     const className = name
       .split(/[.\-]/)
+      .filter(Boolean)
       .map(s => s.charAt(0).toUpperCase() + s.slice(1))
       .join('');
 
