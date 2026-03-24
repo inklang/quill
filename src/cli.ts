@@ -11,6 +11,7 @@ import { InkBuildCommand } from './commands/ink-build.js'
 import { InkCheckCommand } from './commands/ink-check.js'
 import { PublishCommand } from './commands/publish.js'
 import { WatchCommand } from './commands/watch.js'
+import { LoginCommand } from './commands/login.js'
 
 const program = new Command();
 const projectDir = process.cwd();
@@ -70,6 +71,13 @@ program
   .action(async () => {
     const cmd = new PublishCommand(process.cwd())
     await cmd.run()
+  })
+
+program
+  .command('login')
+  .description('Generate a keypair and register with the registry')
+  .action(async () => {
+    await new LoginCommand().run()
   })
 
 program
