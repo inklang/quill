@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0 — 2026-03-24
+
+### Added
+
+- `quill run` — managed Paper dev server command. Automatically downloads Paper and `Ink.jar` on first run, builds and deploys scripts, and watches for file changes to auto-rebuild and restart. Use `--no-watch` to start without file watching. Configure via `[server]` section in `ink-package.toml` (`paper`, `jar`, `path`).
+
 ## 0.2.2 — 2026-03-24
 
 ### Changed
