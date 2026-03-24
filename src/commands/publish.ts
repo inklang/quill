@@ -2,7 +2,7 @@ import { TomlParser } from '../util/toml.js'
 import { RegistryClient } from '../registry/client.js'
 import { FileUtils } from '../util/fs.js'
 import { InkBuildCommand } from './ink-build.js'
-import { readRc, signData, fingerprint } from '../util/keys.js'
+import { readRc } from '../util/keys.js'
 import { join } from 'path'
 import { existsSync, readFileSync } from 'fs'
 import { tmpdir } from 'os'
@@ -19,7 +19,7 @@ export class PublishCommand {
     }
 
     const rc = readRc()
-    if (!rc.privateKey || !rc.publicKey) {
+    if (!rc || !rc.token) {
       console.error('Not logged in. Run `quill login` first.')
       process.exit(1)
     }
@@ -38,8 +38,6 @@ export class PublishCommand {
     await FileUtils.packTarGz(this.projectDir, tarballPath, ['ink-package.toml', 'dist'])
 
     const tarball = readFileSync(tarballPath)
-    const signature = signData(tarball, rc.privateKey)
-    const fp = fingerprint(rc.publicKey)
 
     const client = new RegistryClient()
     const url = `${client.registryUrl}/api/packages/${manifest.name}/${manifest.version}`
@@ -48,8 +46,7 @@ export class PublishCommand {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/gzip',
-        'X-Ink-Public-Key': rc.publicKey,
-        'X-Ink-Signature': signature,
+        'Authorization': `Bearer ${rc.token}`,
       },
       body: new Blob([tarball]),
     })
@@ -60,6 +57,6 @@ export class PublishCommand {
       process.exit(1)
     }
 
-    console.log(`Published ${manifest.name}@${manifest.version} (key: ${fp})`)
+    console.log(`Published ${manifest.name}@${manifest.version}`)
   }
 }

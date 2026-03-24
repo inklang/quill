@@ -1,6 +1,6 @@
 import { TomlParser } from '../util/toml.js';
 import { PackageManifest } from '../model/manifest.js';
-import { readRc, fingerprint } from '../util/keys.js';
+import { readRc } from '../util/keys.js';
 import readline from 'readline';
 import fs from 'fs';
 import path from 'path';
@@ -30,8 +30,8 @@ async function promptTemplate(): Promise<Template> {
   // Show logged-in status
   try {
     const rc = readRc();
-    if (rc.privateKey && rc.publicKey) {
-      console.log(`Logged in (fingerprint: ${fingerprint(rc.publicKey)})`);
+    if (rc) {
+      console.log(`Logged in as ${rc.username}`);
     }
   } catch {}
 
@@ -85,12 +85,12 @@ export class NewCommand {
   private async scaffoldProject(name: string, targetDir: string, template: Template): Promise<void> {
     fs.mkdirSync(targetDir, { recursive: true });
 
-    // Resolve author from ~/.quillrc — requires BOTH keys to be present
+    // Resolve author from ~/.quillrc
     let author: string | undefined;
     try {
       const rc = readRc();
-      if (rc.privateKey && rc.publicKey) {
-        author = fingerprint(rc.publicKey);
+      if (rc) {
+        author = rc.username;
       }
     } catch {}
 
