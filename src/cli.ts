@@ -11,6 +11,7 @@ import { InkBuildCommand } from './commands/ink-build.js'
 import { InkCheckCommand } from './commands/ink-check.js'
 import { PublishCommand } from './commands/publish.js'
 import { WatchCommand } from './commands/watch.js'
+import { RunCommand } from './commands/run.js'
 import { LoginCommand, LogoutCommand } from './commands/login.js'
 import { UpdateCommand } from './commands/update.js'
 import { existsSync } from 'fs'
@@ -136,10 +137,20 @@ program
     await cmd.run()
   })
 
+program
+  .command('run')
+  .description('Build, deploy, and run a managed Paper dev server')
+  .option('--no-watch', 'build + deploy + start server without file watching')
+  .action(async (opts) => {
+    requireProject()
+    const cmd = new RunCommand(process.cwd())
+    await cmd.run({ noWatch: !opts.watch })
+  })
+
 const COMMAND_GROUPS = [
   { title: 'Project',      names: ['new', 'init'] },
   { title: 'Dependencies', names: ['add', 'remove', 'install', 'update', 'ls', 'clean'] },
-  { title: 'Build',        names: ['build', 'check', 'watch'] },
+  { title: 'Build',        names: ['build', 'check', 'watch', 'run'] },
   { title: 'Registry',     names: ['login', 'logout', 'publish'] },
 ]
 
