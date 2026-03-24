@@ -8,6 +8,12 @@ export interface RuntimeConfig {
   entry: string;
 }
 
+export interface ServerConfig {
+  paper?: string;
+  jar?: string;
+  path?: string;
+}
+
 export interface PackageManifest {
   name: string;
   version: string;
@@ -17,6 +23,7 @@ export interface PackageManifest {
   dependencies: Record<string, string>;
   grammar?: GrammarConfig;
   runtime?: RuntimeConfig;
+  server?: ServerConfig;
 }
 
 export function defaultManifest(name: string): PackageManifest {
