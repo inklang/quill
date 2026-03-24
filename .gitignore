@@ -6,3 +6,6 @@ dist/
 packages/
 quill.lock
 package-lock.json
+compiler/ink.jar
+.claude/
+.idea/
