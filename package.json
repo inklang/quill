@@ -1,6 +1,6 @@
 {
   "name": "@inklang/quill",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Package manager CLI for the Ink programming language",
   "type": "module",
   "exports": {

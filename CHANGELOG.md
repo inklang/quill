@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 — 2026-03-24
+
+### Changed
+
+- `quill --help` now groups commands by category (Project, Dependencies, Build, Registry)
+
 ## 0.2.0 — 2026-03-24
 
 ### Added

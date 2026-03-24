@@ -20,7 +20,7 @@ const projectDir = process.cwd();
 program
   .name('quill')
   .description('Package manager for the Ink programming language')
-  .version('0.2.0');
+  .version('0.2.1');
 
 program
   .command('new <name>')
@@ -115,5 +115,56 @@ program
     const cmd = new WatchCommand(process.cwd())
     await cmd.run()
   })
+
+const COMMAND_GROUPS = [
+  { title: 'Project',      names: ['new', 'init'] },
+  { title: 'Dependencies', names: ['add', 'remove', 'install', 'update', 'ls', 'clean'] },
+  { title: 'Build',        names: ['build', 'check', 'watch'] },
+  { title: 'Registry',     names: ['login', 'logout', 'publish'] },
+]
+
+program.configureHelp({
+  formatHelp(cmd, helper) {
+    const indent = '  '
+    function pad(str: string, width: number) {
+      return str + ' '.repeat(Math.max(1, width - str.length))
+    }
+
+    const allCmds = helper.visibleCommands(cmd)
+    const cmdMap = new Map(allCmds.map(c => [c.name(), c]))
+    const termWidth = Math.max(...allCmds.map(c => helper.subcommandTerm(c).length))
+
+    let out = ''
+
+    // Usage + description
+    out += `Usage: ${helper.commandUsage(cmd)}\n\n`
+    const desc = helper.commandDescription(cmd)
+    if (desc) out += `${desc}\n\n`
+
+    // Options
+    const opts = helper.visibleOptions(cmd)
+    if (opts.length) {
+      const optWidth = Math.max(...opts.map(o => helper.optionTerm(o).length))
+      out += 'Options:\n'
+      for (const opt of opts) {
+        out += `${indent}${pad(helper.optionTerm(opt), optWidth + 2)}${helper.optionDescription(opt)}\n`
+      }
+      out += '\n'
+    }
+
+    // Grouped commands
+    for (const group of COMMAND_GROUPS) {
+      const cmds = group.names.map(n => cmdMap.get(n)).filter(Boolean) as Command[]
+      if (!cmds.length) continue
+      out += `${group.title}:\n`
+      for (const c of cmds) {
+        out += `${indent}${pad(helper.subcommandTerm(c), termWidth + 2)}${helper.subcommandDescription(c)}\n`
+      }
+      out += '\n'
+    }
+
+    return out
+  }
+})
 
 program.parse();
