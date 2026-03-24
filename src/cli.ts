@@ -22,9 +22,22 @@ program
   .description('Package manager for the Ink programming language')
   .version('0.1.3');
 
-program.command('new <name>').description('Scaffold a new package').action(async (name) => {
-  await new NewCommand(projectDir).run(name);
-});
+program
+  .command('new <name>')
+  .description('Scaffold a new project or grammar package')
+  .option('--package', 'scaffold a publishable grammar package with runtime')
+  .option('--template <name>', 'use a named template (blank, hello-world, full)')
+  .action(async (name, opts) => {
+    if (opts.package && opts.template) {
+      console.error('Error: --template and --package are mutually exclusive')
+      process.exit(1)
+    }
+    if (opts.template && !['blank', 'hello-world', 'full'].includes(opts.template)) {
+      console.error(`Error: Unknown template "${opts.template}". Available templates: blank, hello-world, full`)
+      process.exit(1)
+    }
+    await new NewCommand(projectDir).run(name, { isPackage: !!opts.package, template: opts.template })
+  })
 
 program.command('init').description('Initialize quill.toml in existing project').action(async () => {
   await new InitCommand(projectDir).run();
