@@ -31,7 +31,7 @@ function requireProject(): void {
 program
   .name('quill')
   .description('Package manager for the Ink programming language')
-  .version('0.3.0');
+  .version('0.3.1');
 
 program
   .command('new <name>')

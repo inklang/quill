@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1 — 2026-03-24
+
+### Fixed
+
+- Bundle `compiler/ink.jar` in the npm package so `quill build` and `quill run` work after a global install without requiring `INK_COMPILER` env var.
+
 ## 0.3.0 — 2026-03-24
 
 ### Added

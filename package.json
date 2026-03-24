@@ -1,6 +1,6 @@
 {
   "name": "@inklang/quill",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Package manager CLI for the Ink programming language",
   "type": "module",
   "exports": {
@@ -10,6 +10,13 @@
   "publishConfig": {
     "access": "public"
   },
+  "files": [
+    "dist/",
+    "src/",
+    "compiler/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "main": "dist/cli.js",
   "bin": {
     "quill": "dist/cli.js",
