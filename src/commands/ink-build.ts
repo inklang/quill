@@ -116,48 +116,51 @@ export class InkBuildCommand {
           console.error(
             'Ink compiler not found. Specify one of:\n' +
             '  • [build] compiler = "path/to/ink.jar"  in ink-package.toml\n' +
-            '  • INK_COMPILER=path/to/ink.jar  environment variable'
+            '  • [build] compiler = "path/to/printing_press"  in ink-package.toml\n' +
+            '  • INK_COMPILER=path/to/compiler  environment variable'
           )
           process.exit(1)
         }
 
+        const isPrintingPress = compiler?.endsWith('printing_press') || compiler?.endsWith('printing_press.exe')
         const outDir = join(distDir, 'scripts')
         mkdirSync(outDir, { recursive: true })
 
-        // Collect grammar IR files: current package + all installed packages
-        const grammarArgs: string[] = []
-        const ownGrammarIr = join(distDir, 'grammar.ir.json')
-        if (existsSync(ownGrammarIr)) {
-          grammarArgs.push(ownGrammarIr)
-        }
-        const packagesDir = join(this.projectDir, 'packages')
-        if (existsSync(packagesDir)) {
-          for (const pkgName of readdirSync(packagesDir)) {
-            const pkgGrammar = join(packagesDir, pkgName, 'dist', 'grammar.ir.json')
-            if (existsSync(pkgGrammar)) {
-              grammarArgs.push(pkgGrammar)
-              console.log(`Using grammar from installed package: ${pkgName}`)
-            }
-          }
-        }
-
-        const javaCmd = (process.env['INK_JAVA'] || 'java').replace(/\\/g, '/')
         const compilerPath = compiler.replace(/\\/g, '/')
         const scriptsDirFwd = scriptsDir.replace(/\\/g, '/')
         const outDirFwd = outDir.replace(/\\/g, '/')
-        const grammarFlags = grammarArgs
-          .map(p => `--grammar "${p.replace(/\\/g, '/')}"`)
-          .join(' ')
 
-        try {
-          execSync(
-            `"${javaCmd}" -jar "${compilerPath}" compile ${grammarFlags} --sources "${scriptsDirFwd}" --out "${outDirFwd}"`,
-            { cwd: this.projectDir, stdio: 'pipe' } as any
-          )
-        } catch (e: any) {
-          const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '')
-          console.error('Ink compilation failed:\n' + output)
-          process.exit(1)
+        if (isPrintingPress) {
+          // printing_press batch mode (grammars auto-discovered)
+          try {
+            execSync(
+              `"${compilerPath}" compile --sources "${scriptsDirFwd}" --out "${outDirFwd}"`,
+              { cwd: this.projectDir, stdio: 'pipe' } as any
+            )
+          } catch (e: any) {
+            const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '')
+            console.error('Ink compilation failed:\n' + output)
+            process.exit(1)
+          }
+        } else {
+          // ink.jar mode (existing, uses --grammar flags)
+          const javaCmd = (process.env['INK_JAVA'] || 'java').replace(/\\/g, '/')
+          for (const inkFile of inkFiles) {
+            const inputPath = join(scriptsDir, inkFile).replace(/\\/g, '/')
+            const outputFile = inkFile.replace(/\.ink$/, '.inkc')
+            const outputPath = join(outDir, outputFile).replace(/\\/g, '/')
+
+            try {
+              execSync(
+                `"${javaCmd}" -jar "${compilerPath}" compile "${inputPath}" -o "${outputPath}"`,
+                { cwd: this.projectDir, stdio: 'pipe' } as any
+              )
+            } catch (e: any) {
+              const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '')
+              console.error(`Ink compilation failed for ${inkFile}:\n` + output)
+              process.exit(1)
+            }
+          }
         }
 
         const compiledFiles = readdirSync(outDir).filter(f => f.endsWith('.inkc'))
@@ -183,13 +186,23 @@ export class InkBuildCommand {
       return null
     }
 
-    // 1. Bundled with quill: <quill-root>/compiler/ink.jar
     const quillRoot = fileURLToPath(new URL('../..', import.meta.url))
-    const bundled = join(quillRoot, 'compiler', 'ink.jar')
-    const r1 = tryPath(bundled)
+
+    // 1. Bundled ink.jar (existing)
+    const bundledJar = join(quillRoot, 'compiler', 'ink.jar')
+    const r1 = tryPath(bundledJar)
     if (r1) return r1
 
-    // 2. INK_COMPILER env var (dev override)
+    // 2. Bundled printing_press (new)
+    const bundledPressExe = join(quillRoot, 'compiler', 'printing_press.exe')
+    const r2 = tryPath(bundledPressExe)
+    if (r2) return r2
+
+    const bundledPress = join(quillRoot, 'compiler', 'printing_press')
+    const r3 = tryPath(bundledPress)
+    if (r3) return r3
+
+    // 3. INK_COMPILER env var
     const envCompiler = process.env['INK_COMPILER']
     if (envCompiler) {
       const r = tryPath(envCompiler)
