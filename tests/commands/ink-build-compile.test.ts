@@ -47,4 +47,70 @@ describe('ink build .ink compilation', () => {
     // This test is obsolete - when no compiler is found, resolveCompiler() auto-downloads
     // Instead of erroring, the build now proceeds after downloading the compiler
   })
+
+  it('incremental build skips unchanged scripts', () => {
+    // First build
+    execSync(`npx tsx ${CLI} build`, {
+      cwd: FIXTURE,
+      encoding: 'utf8',
+      env: { ...process.env, INK_COMPILER: MOCK_COMPILER },
+    })
+
+    // Second build should be incremental (no recompilation)
+    const result2 = execSync(`npx tsx ${CLI} build`, {
+      cwd: FIXTURE,
+      encoding: 'utf8',
+      env: { ...process.env, INK_COMPILER: MOCK_COMPILER },
+    })
+    expect(result2.toString()).toContain('All scripts up to date')
+  })
+
+  it('quill build --full forces full rebuild', () => {
+    // First build
+    execSync(`npx tsx ${CLI} build`, {
+      cwd: FIXTURE,
+      encoding: 'utf8',
+      env: { ...process.env, INK_COMPILER: MOCK_COMPILER },
+    })
+
+    // --full should recompile
+    const result = execSync(`npx tsx ${CLI} build --full`, {
+      cwd: FIXTURE,
+      encoding: 'utf8',
+      env: { ...process.env, INK_COMPILER: MOCK_COMPILER },
+    })
+    expect(result.toString()).toContain('Compiled')
+  })
+
+  it('quill cache shows cache info after build', () => {
+    // Ensure cache exists
+    execSync(`npx tsx ${CLI} build`, {
+      cwd: FIXTURE,
+      encoding: 'utf8',
+      env: { ...process.env, INK_COMPILER: MOCK_COMPILER },
+    })
+
+    const result = execSync(`npx tsx ${CLI} cache`, {
+      cwd: FIXTURE,
+      encoding: 'utf8',
+    })
+    expect(result.toString()).toContain('Cache:')
+    expect(result.toString()).toContain('.quill/cache')
+  })
+
+  it('quill cache clean removes cache', () => {
+    // Ensure cache exists
+    execSync(`npx tsx ${CLI} build`, {
+      cwd: FIXTURE,
+      encoding: 'utf8',
+      env: { ...process.env, INK_COMPILER: MOCK_COMPILER },
+    })
+
+    const result = execSync(`npx tsx ${CLI} cache clean`, {
+      cwd: FIXTURE,
+      encoding: 'utf8',
+    })
+    expect(result.toString()).toContain('Removed')
+    expect(result.toString()).toContain('.quill/cache')
+  })
 })
