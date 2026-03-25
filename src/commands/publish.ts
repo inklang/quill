@@ -1,4 +1,5 @@
 import { TomlParser } from '../util/toml.js'
+import { success as splash } from '../ui/ascii.js'
 import { RegistryClient } from '../registry/client.js'
 import { FileUtils } from '../util/fs.js'
 import { InkBuildCommand } from './ink-build.js'
@@ -54,6 +55,6 @@ export class PublishCommand {
       process.exit(1)
     }
 
-    console.log(`Published ${manifest.name}@${manifest.version}`)
+    splash.publish()
   }
 }
