@@ -3,6 +3,7 @@ import { InkBuildCommand } from './ink-build.js'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import chokidar from 'chokidar'
+import { success as splash } from '../ui/ascii.js'
 
 export class WatchCommand {
   constructor(private projectDir: string) {}
@@ -26,7 +27,9 @@ export class WatchCommand {
       return
     }
 
-    console.log('Watching for changes:')
+    console.log('')
+    splash.watch()
+    console.log('Watching:')
     for (const p of watchPaths) {
       console.log(`  ${p}`)
     }
@@ -44,7 +47,7 @@ export class WatchCommand {
       try {
         const cmd = new InkBuildCommand(this.projectDir)
         await cmd.run()
-        console.log('Build complete.')
+        splash.build()
       } catch (e: any) {
         console.error('Build failed:', e.message ?? e)
       }
