@@ -1,4 +1,4 @@
-import { cli, print } from './colors.js';
+import { print } from './colors.js';
 
 /** The Quill mascot */
 const MASCOT = `   (o>
