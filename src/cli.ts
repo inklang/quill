@@ -17,6 +17,7 @@ import { UpdateCommand } from './commands/update.js'
 import { SearchCommand } from './commands/search.js'
 import { InfoCommand } from './commands/info.js'
 import { DoctorCommand } from './commands/doctor.js'
+import { CacheCommand, CacheCleanCommand } from './cache/commands.js'
 import { existsSync } from 'fs'
 import { join } from 'path'
 
@@ -93,10 +94,32 @@ program.command('clean').description('Remove .quill-cache/').action(async () => 
 program
   .command('build')
   .description('Compile grammar and/or Ink scripts')
-  .action(async () => {
+  .option('-F, --full', 'Force full recompilation of all scripts')
+  .action(async (opts) => {
     requireProject()
     const cmd = new InkBuildCommand(process.cwd())
-    await cmd.run()
+    await cmd.run({ full: !!opts.full })
+  })
+
+// cache as parent command (must NOT have action to allow subcommands)
+const cacheCmd = program
+  .command('cache')
+  .description('Manage build cache')
+
+cacheCmd
+  .command('info')
+  .description('Show build cache info')
+  .action(async () => {
+    requireProject()
+    new CacheCommand(projectDir).run()
+  })
+
+cacheCmd
+  .command('clean')
+  .description('Remove build cache')
+  .action(async () => {
+    requireProject()
+    new CacheCleanCommand(projectDir).run()
   })
 
 program
@@ -181,6 +204,7 @@ const COMMAND_GROUPS = [
   { title: 'Project',      names: ['new', 'init'] },
   { title: 'Dependencies', names: ['add', 'remove', 'install', 'update', 'ls', 'clean'] },
   { title: 'Build',        names: ['build', 'check', 'watch', 'run'] },
+  { title: 'Cache',        names: ['cache info', 'cache clean'] },
   { title: 'Registry',     names: ['login', 'logout', 'publish', 'search', 'info'] },
   { title: 'Doctor',       names: ['doctor'] },
 ]

@@ -13,7 +13,7 @@ import { resolveCompiler } from '../util/compiler.js'
 export class InkBuildCommand {
   constructor(private projectDir: string) {}
 
-  async run(): Promise<void> {
+  async run(opts: { full?: boolean } = {}): Promise<void> {
     const manifest = TomlParser.read(join(this.projectDir, 'ink-package.toml'))
     const distDir = join(this.projectDir, 'dist')
     mkdirSync(distDir, { recursive: true })
