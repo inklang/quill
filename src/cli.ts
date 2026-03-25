@@ -16,6 +16,7 @@ import { LoginCommand, LogoutCommand } from './commands/login.js'
 import { UpdateCommand } from './commands/update.js'
 import { SearchCommand } from './commands/search.js'
 import { InfoCommand } from './commands/info.js'
+import { DoctorCommand } from './commands/doctor.js'
 import { existsSync } from 'fs'
 import { join } from 'path'
 
@@ -168,11 +169,20 @@ program
     await cmd.run({ noWatch: !opts.watch })
   })
 
+program
+  .command('doctor')
+  .description('Run diagnostics and check for common issues')
+  .option('--json', 'Output JSON')
+  .action(async (opts) => {
+    await new DoctorCommand().run(!!opts.json)
+  })
+
 const COMMAND_GROUPS = [
   { title: 'Project',      names: ['new', 'init'] },
   { title: 'Dependencies', names: ['add', 'remove', 'install', 'update', 'ls', 'clean'] },
   { title: 'Build',        names: ['build', 'check', 'watch', 'run'] },
   { title: 'Registry',     names: ['login', 'logout', 'publish', 'search', 'info'] },
+  { title: 'Doctor',       names: ['doctor'] },
 ]
 
 program.configureHelp({
