@@ -14,6 +14,7 @@ import { WatchCommand } from './commands/watch.js'
 import { RunCommand } from './commands/run.js'
 import { LoginCommand, LogoutCommand } from './commands/login.js'
 import { UpdateCommand } from './commands/update.js'
+import { SearchCommand } from './commands/search.js'
 import { existsSync } from 'fs'
 import { join } from 'path'
 
@@ -129,6 +130,16 @@ program
   })
 
 program
+  .command('search <query>')
+  .description('Search the registry for packages')
+  .option('--page <n>', 'Page number', '1')
+  .option('--json', 'Output raw JSON')
+  .action(async (query, opts) => {
+    const page = parseInt(opts.page || '1', 10)
+    await new SearchCommand().run(query, page, !!opts.json)
+  })
+
+program
   .command('watch')
   .description('Watch for file changes and rebuild')
   .action(async () => {
@@ -151,7 +162,7 @@ const COMMAND_GROUPS = [
   { title: 'Project',      names: ['new', 'init'] },
   { title: 'Dependencies', names: ['add', 'remove', 'install', 'update', 'ls', 'clean'] },
   { title: 'Build',        names: ['build', 'check', 'watch', 'run'] },
-  { title: 'Registry',     names: ['login', 'logout', 'publish'] },
+  { title: 'Registry',     names: ['login', 'logout', 'publish', 'search'] },
 ]
 
 program.configureHelp({
