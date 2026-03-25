@@ -198,4 +198,27 @@ program.configureHelp({
   }
 })
 
-program.parse();
+// Handle errors from async actions - ensures errors are caught and printed properly
+program.exitOverride((err) => {
+  if (err.message) {
+    console.error(err.message)
+  }
+  process.exit(err.exitCode ?? 1)
+})
+
+program.on('command:*', () => {
+  console.error('Unknown command. Run "quill --help" for available commands.')
+  process.exit(1)
+})
+
+// Catch unhandled promise rejections from async command handlers
+process.on('unhandledRejection', (reason: any) => {
+  if (reason?.message) {
+    console.error(reason.message)
+  } else if (reason) {
+    console.error(reason)
+  }
+  process.exit(1)
+})
+
+program.parse()

@@ -8,9 +8,7 @@ import { join, dirname, basename } from 'path'
 import { execSync } from 'child_process'
 import { tmpdir } from 'os'
 import { pathToFileURL, fileURLToPath } from 'url'
-
-// Quill's own node_modules so grammar files can resolve @inklang/quill/grammar
-const quillNodeModules = join(fileURLToPath(new URL('../..', import.meta.url)), 'node_modules')
+import { resolveCompiler } from '../util/compiler.js'
 
 export class InkBuildCommand {
   constructor(private projectDir: string) {}
@@ -111,22 +109,33 @@ export class InkBuildCommand {
     if (existsSync(scriptsDir)) {
       const inkFiles = readdirSync(scriptsDir).filter(f => f.endsWith('.ink'))
       if (inkFiles.length > 0) {
-        const compiler = this.resolveCompiler()
-        if (!compiler) {
-          console.error(
-            'Ink compiler not found. Specify one of:\n' +
-            '  • [build] compiler = "path/to/ink.jar"  in ink-package.toml\n' +
-            '  • [build] compiler = "path/to/printing_press"  in ink-package.toml\n' +
-            '  • INK_COMPILER=path/to/compiler  environment variable'
+        let compiler: string | null
+        try {
+          compiler = await resolveCompiler()
+        } catch (e: any) {
+          throw new Error(
+            'Ink compiler not found.\n' +
+            '\n' +
+            'Options:\n' +
+            '  1. Download it automatically:\n' +
+            '       quill build  (compiler will be downloaded on first run)\n' +
+            '\n' +
+            '  2. Set INK_COMPILER environment variable to an existing compiler:\n' +
+            `       Windows (cmd):  set INK_COMPILER=C:\\path\\to\\printing_press.exe\n` +
+            `       Windows (ps):  $env:INK_COMPILER=\"C:\\path\\to\\printing_press.exe\"\n` +
+            `       macOS/Linux:   export INK_COMPILER=/path/to/printing_press\n` +
+            '\n' +
+            '  3. Build from source: https://github.com/inklang/printing_press\n' +
+            '\n' +
+            `Error: ${e.message}`
           )
-          process.exit(1)
         }
 
-        const isPrintingPress = compiler?.endsWith('printing_press') || compiler?.endsWith('printing_press.exe')
+        const isPrintingPress = compiler!.endsWith('printing_press') || compiler!.endsWith('printing_press.exe')
         const outDir = join(distDir, 'scripts')
         mkdirSync(outDir, { recursive: true })
 
-        const compilerPath = compiler.replace(/\\/g, '/')
+        const compilerPath = compiler!.replace(/\\/g, '/')
         const scriptsDirFwd = scriptsDir.replace(/\\/g, '/')
         const outDirFwd = outDir.replace(/\\/g, '/')
 
@@ -170,44 +179,6 @@ export class InkBuildCommand {
     // Write ink-manifest.json
     writeFileSync(join(distDir, 'ink-manifest.json'), JSON.stringify(inkManifest, null, 2))
     console.log('Wrote dist/ink-manifest.json')
-  }
-
-  private resolveCompiler(): string | null {
-    const tryPath = (p: string): string | null => {
-      if (existsSync(p)) return p
-      // Convert MSYS2/Git Bash paths (/c/foo) to Windows paths (C:/foo)
-      const msys = p.match(/^\/([a-zA-Z])\/(.*)$/)
-      if (msys) {
-        const win = `${msys[1].toUpperCase()}:/${msys[2]}`
-        if (existsSync(win)) return win
-      }
-      return null
-    }
-
-    const quillRoot = fileURLToPath(new URL('../..', import.meta.url))
-
-    // 1. Bundled ink.jar (existing)
-    const bundledJar = join(quillRoot, 'compiler', 'ink.jar')
-    const r1 = tryPath(bundledJar)
-    if (r1) return r1
-
-    // 2. Bundled printing_press (new)
-    const bundledPressExe = join(quillRoot, 'compiler', 'printing_press.exe')
-    const r2 = tryPath(bundledPressExe)
-    if (r2) return r2
-
-    const bundledPress = join(quillRoot, 'compiler', 'printing_press')
-    const r3 = tryPath(bundledPress)
-    if (r3) return r3
-
-    // 3. INK_COMPILER env var
-    const envCompiler = process.env['INK_COMPILER']
-    if (envCompiler) {
-      const r = tryPath(envCompiler)
-      if (r) return r
-    }
-
-    return null
   }
 
   private async buildGrammar(packageName: string, grammarEntry: string, grammarOutput: string): Promise<void> {
