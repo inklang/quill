@@ -101,20 +101,18 @@ program
     await cmd.run({ full: !!opts.full })
   })
 
-// cache as parent command (must NOT have action to allow subcommands)
-const cacheCmd = program
-  .command('cache')
-  .description('Manage build cache')
-
-cacheCmd
-  .command('info')
+// cache-info as standalone command (alias: cache)
+const cacheInfoCmd = program
+  .command('cache-info')
   .description('Show build cache info')
+  .alias('cache')
   .action(async () => {
     requireProject()
     new CacheCommand(projectDir).run()
   })
 
-cacheCmd
+// cache clean as subcommand of cache-info
+cacheInfoCmd
   .command('clean')
   .description('Remove build cache')
   .action(async () => {
@@ -204,7 +202,7 @@ const COMMAND_GROUPS = [
   { title: 'Project',      names: ['new', 'init'] },
   { title: 'Dependencies', names: ['add', 'remove', 'install', 'update', 'ls', 'clean'] },
   { title: 'Build',        names: ['build', 'check', 'watch', 'run'] },
-  { title: 'Cache',        names: ['cache info', 'cache clean'] },
+  { title: 'Cache',        names: ['cache'] },
   { title: 'Registry',     names: ['login', 'logout', 'publish', 'search', 'info'] },
   { title: 'Doctor',       names: ['doctor'] },
 ]
