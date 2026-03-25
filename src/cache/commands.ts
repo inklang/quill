@@ -31,10 +31,10 @@ export class CacheCommand {
       }
     }
 
-    const sizeKB = (totalSize / 1024).toFixed(1)
-    console.log(`Size:   ${sizeKB} KB`)
-    console.log(`Entries: ${Object.keys(manifest.entries).length}`)
-    console.log(`Last full build: ${manifest.lastFullBuild ? new Date(manifest.lastFullBuild).toLocaleString() : 'none'}`)
+    const sizeKB = Math.round(totalSize / 1024)
+    console.log(`Size:  ${sizeKB} KB`)
+    console.log(`Entries:${Object.keys(manifest.entries).length}`)
+    console.log(`Last full build: ${manifest.lastFullBuild ? new Date(manifest.lastFullBuild).toISOString().replace('T', ' ').replace(/\.\d+Z$/, '') : 'none'}`)
     console.log('')
 
     for (const [relPath, entry] of Object.entries(manifest.entries)) {
