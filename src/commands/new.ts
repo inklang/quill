@@ -2,6 +2,8 @@ import { TomlParser } from '../util/toml.js';
 import { PackageManifest } from '../model/manifest.js';
 import fs from 'fs';
 import path from 'path';
+import { success as splash } from '../ui/ascii.js';
+import { print } from '../ui/colors.js';
 
 export class NewCommand {
   constructor(private projectDir: string) {}
@@ -109,11 +111,7 @@ class ${className}Runtime {
 `
     );
 
-    console.log(`Created package: ${name}/`);
-    console.log('  ink-package.toml');
-    console.log('  src/grammar.ts');
-    console.log('  scripts/main.ink');
-    console.log('  runtime/build.gradle.kts');
-    console.log(`  runtime/src/main/kotlin/${className}Runtime.kt`);
+    splash.new();
+    print.muted(`  Package: ${name}/`);
   }
 }
