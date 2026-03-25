@@ -6,3 +6,4 @@ dist/
 packages/
 quill.lock
 package-lock.json
+.worktrees/
