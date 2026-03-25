@@ -8,6 +8,7 @@ import { join, dirname, basename } from 'path'
 import { execSync } from 'child_process'
 import { tmpdir } from 'os'
 import { pathToFileURL } from 'url'
+import { success as splash } from '../ui/ascii.js'
 
 export class InkBuildCommand {
   constructor(private projectDir: string) {}
@@ -143,6 +144,7 @@ export class InkBuildCommand {
     // Write ink-manifest.json
     writeFileSync(join(distDir, 'ink-manifest.json'), JSON.stringify(inkManifest, null, 2))
     console.log('Wrote dist/ink-manifest.json')
+    splash.build()
   }
 
   private async buildGrammar(packageName: string, grammarEntry: string, grammarOutput: string): Promise<void> {
