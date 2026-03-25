@@ -15,6 +15,7 @@ import { RunCommand } from './commands/run.js'
 import { LoginCommand, LogoutCommand } from './commands/login.js'
 import { UpdateCommand } from './commands/update.js'
 import { SearchCommand } from './commands/search.js'
+import { InfoCommand } from './commands/info.js'
 import { existsSync } from 'fs'
 import { join } from 'path'
 
@@ -140,6 +141,15 @@ program
   })
 
 program
+  .command('info <pkg>')
+  .description('Show details about a package')
+  .option('--version <ver>', 'Show specific version')
+  .option('--json', 'Output raw JSON')
+  .action(async (pkg, opts) => {
+    await new InfoCommand().run(pkg, opts.version, !!opts.json)
+  })
+
+program
   .command('watch')
   .description('Watch for file changes and rebuild')
   .action(async () => {
@@ -162,7 +172,7 @@ const COMMAND_GROUPS = [
   { title: 'Project',      names: ['new', 'init'] },
   { title: 'Dependencies', names: ['add', 'remove', 'install', 'update', 'ls', 'clean'] },
   { title: 'Build',        names: ['build', 'check', 'watch', 'run'] },
-  { title: 'Registry',     names: ['login', 'logout', 'publish', 'search'] },
+  { title: 'Registry',     names: ['login', 'logout', 'publish', 'search', 'info'] },
 ]
 
 program.configureHelp({
