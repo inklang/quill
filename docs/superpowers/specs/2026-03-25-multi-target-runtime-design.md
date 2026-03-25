@@ -66,10 +66,10 @@ quill build --target=all                    # builds all declared targets
 
 ### Op Injection Model
 
-Ops are **host functions** registered at runtime:
+Ops are **host functions** registered at runtime. Two sources:
 
 1. **Builtin ops** — core language ops (`print`, `+`, etc.) are registered in Kotlin/host code inside the target runtime
-2. **Custom ops** — package authors can define ops in `runtime/<target>/src/main/ink/ops.ink` or via `registerOp()` in host code
+2. **Custom ops** — defined in `runtime/<target>/src/main/ink/ops.ink`, transpiled to Kotlin at build time
 
 **Flow:**
 ```
@@ -79,7 +79,18 @@ Ink code (WHAT)        VM dispatch         Host code (HOW)
 print("hello")  ──►  VM looks up "print"  ──►  runtime.registerOp("print", ...)
 ```
 
-The IR is target-agnostic. The VM dispatches to the registered implementation for the current target.
+**Dynamic dispatch (no manifest):** VM just dispatches. Op not registered? Runtime error. Developer is responsible for registering all ops their package uses.
+
+**Custom ops.ink compilation:** `runtime/<target>/src/main/ink/ops.ink` is transpiled to Kotlin at build time, then compiled with the target's Gradle build. No runtime interpreter — just normal JVM dispatch.
+
+### Build Validation
+
+```bash
+quill build --target=paper   # OK if "paper" is in targets list
+quill build --target=hytale  # FAILS if "hytale" not declared
+```
+
+If a package does not declare support for the target, `quill build --target=X` fails with a clear error. No partial builds.
 
 ### What's Universal vs Per-Target
 
@@ -109,6 +120,8 @@ The IR is target-agnostic. The VM dispatches to the registered implementation fo
 
 ## Open Questions
 
-- How does the VM know which ops are available? Is there a generated manifest?
-- How are Ink-defined ops (`ops.ink`) compiled and loaded — interpreted at runtime or pre-compiled?
+~~How does the VM know which ops are available?~~ — **Resolved:** Dynamic dispatch, no manifest. Runtime error if op not registered.
+
+~~How are Ink-defined ops (`ops.ink`) compiled and loaded?~~ — **Resolved:** Transpiled to Kotlin at build time, compiled with Gradle. No runtime interpreter.
+
 - What is the `InkRuntime` interface contract that all target VMs must implement?
