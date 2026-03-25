@@ -6,6 +6,11 @@ dist/
 packages/
 quill.lock
 package-lock.json
-compiler/ink.jar
+compiler/
 .claude/
 .idea/
+.vscode/
+
+# Test fixtures
+tests/fixtures/gradle-project/runtime/.gradle/
+tests/fixtures/gradle-project/runtime/build/
