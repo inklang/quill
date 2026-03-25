@@ -15,7 +15,7 @@ export const cli = {
   warn: (text: string) => colorette.yellow(text),
 
   /** Bold white — package names, versions */
-  bold: (text: string) => colorette.white(colorette.bold(text)),
+  bold: (text: string) => colorette.bold(text),
 
   /** Gray — muted / secondary text */
   muted: (text: string) => colorette.gray(text),
