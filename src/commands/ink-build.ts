@@ -198,6 +198,13 @@ export class InkBuildCommand {
                 compiledAt: new Date().toISOString(),
               }
             }
+            // Remove entries for deleted source files
+            for (const relPath of Object.keys(allEntries)) {
+              const fullPath = join(this.projectDir, relPath)
+              if (!existsSync(fullPath)) {
+                delete allEntries[relPath]
+              }
+            }
             const newManifest = {
               version: 1 as const,
               lastFullBuild: cachedManifest?.lastFullBuild ?? new Date().toISOString(),
@@ -351,23 +358,36 @@ writeFileSync('${grammarOutputPath.replace(/\\/g, '\\\\')}', result);
       const outputFwd = outputPath.replace(/\\/g, '/')
 
       let ok = false
+      let result: ReturnType<typeof spawnSync> | null = null
       if (isPrintingPress) {
-        const result = spawnSync(`"${compilerPath}" compile "${inputFwd}" -o "${outputFwd}"`, {
+        result = spawnSync(`"${compilerPath}" compile "${inputFwd}" -o "${outputFwd}"`, {
           shell: true,
           cwd: this.projectDir,
         })
-        ok = result.status === 0
+        if (result.error) {
+          console.error(`Compiler error: ${result.error.message}`)
+          ok = false
+        } else {
+          ok = result.status === 0
+        }
       } else {
         const javaCmd = (process.env['INK_JAVA'] || 'java').replace(/\\/g, '/')
-        const result = spawnSync(
+        result = spawnSync(
           `"${javaCmd}" -jar "${compilerPath}" compile "${inputFwd}" -o "${outputFwd}"`,
           { shell: true, cwd: this.projectDir }
         )
-        ok = result.status === 0
+        if (result.error) {
+          console.error(`Compiler error: ${result.error.message}`)
+          ok = false
+        } else {
+          ok = result.status === 0
+        }
       }
 
       if (!ok) {
         console.error(`Failed to compile ${dirty.relativePath}`)
+        if (result.stdout) console.error(result.stdout.toString())
+        if (result.stderr) console.error(result.stderr.toString())
         process.exit(1)
       }
       compiled++
