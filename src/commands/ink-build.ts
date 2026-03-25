@@ -5,7 +5,9 @@ import { serialize } from '../grammar/serializer.js'
 import { validate } from '../grammar/validator.js'
 import { writeFileSync, mkdirSync, unlinkSync, readFileSync, existsSync, copyFileSync, readdirSync } from 'fs'
 import { join, dirname, basename } from 'path'
-import { execSync } from 'child_process'
+import { execSync, spawnSync } from 'child_process'
+import { CacheManifestStore } from '../cache/manifest.js'
+import { hashFile, hashGrammarIr, findDirtyFiles, DirtyFile } from '../cache/util.js'
 import { tmpdir } from 'os'
 import { pathToFileURL, fileURLToPath } from 'url'
 import { resolveCompiler } from '../util/compiler.js'
@@ -131,48 +133,83 @@ export class InkBuildCommand {
           )
         }
 
-        const isPrintingPress = compiler!.endsWith('printing_press') || compiler!.endsWith('printing_press.exe')
         const outDir = join(distDir, 'scripts')
         mkdirSync(outDir, { recursive: true })
 
-        const compilerPath = compiler!.replace(/\\/g, '/')
-        const scriptsDirFwd = scriptsDir.replace(/\\/g, '/')
-        const outDirFwd = outDir.replace(/\\/g, '/')
-
-        if (isPrintingPress) {
-          // printing_press batch mode (grammars auto-discovered)
-          try {
-            execSync(
-              `"${compilerPath}" compile --sources "${scriptsDirFwd}" --out "${outDirFwd}"`,
-              { cwd: this.projectDir, stdio: 'pipe' } as any
-            )
-          } catch (e: any) {
-            const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '')
-            console.error('Ink compilation failed:\n' + output)
-            process.exit(1)
+        if (opts.full) {
+          // Full rebuild: batch mode + fresh manifest
+          this.compileScriptsBatch(compiler!, scriptsDir, outDir, distDir)
+          const grammarHash = hashGrammarIr(distDir)
+          const dirtyFiles: DirtyFile[] = inkFiles.map(f => ({
+            relativePath: `scripts/${f}`.replace(/\\/g, '/'),
+            hash: hashFile(join(scriptsDir, f)),
+          }))
+          const entries: Record<string, any> = {}
+          for (const f of dirtyFiles) {
+            const output = f.relativePath.replace(/\.ink$/, '.inkc')
+            entries[f.relativePath] = {
+              hash: f.hash,
+              output,
+              compiledAt: new Date().toISOString(),
+            }
           }
+          const manifest = {
+            version: 1 as const,
+            lastFullBuild: new Date().toISOString(),
+            grammarIrHash: grammarHash,
+            entries,
+          }
+          const cacheStore = new CacheManifestStore(join(this.projectDir, '.quill', 'cache'))
+          cacheStore.write(manifest)
         } else {
-          // ink.jar batch mode (uses --grammar flags)
-          const javaCmd = (process.env['INK_JAVA'] || 'java').replace(/\\/g, '/')
-          const grammarFlags = inkManifest.grammar
-            ? `--grammar "${join(distDir, inkManifest.grammar as string).replace(/\\/g, '/')}" `
-            : ''
+          // Incremental build
+          const cacheStore = new CacheManifestStore(join(this.projectDir, '.quill', 'cache'))
+          const cachedManifest = cacheStore.read()
 
-          try {
-            execSync(
-              `"${javaCmd}" -jar "${compilerPath}" compile ${grammarFlags}--sources "${scriptsDirFwd}" --out "${outDirFwd}"`,
-              { cwd: this.projectDir, stdio: 'pipe' } as any
-            )
-          } catch (e: any) {
-            const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '')
-            console.error('Ink compilation failed:\n' + output)
-            process.exit(1)
+          // Grammar IR change invalidates all scripts
+          const currentGrammarHash = hashGrammarIr(distDir)
+          const grammarChanged = cachedManifest && cachedManifest.grammarIrHash !== currentGrammarHash
+
+          if (grammarChanged) {
+            console.log('Grammar IR changed — invalidating script cache')
+          }
+
+          const dirtyFiles = grammarChanged
+            ? inkFiles.map(f => ({
+                relativePath: `scripts/${f}`.replace(/\\/g, '/'),
+                hash: hashFile(join(scriptsDir, f)),
+              }))
+            : findDirtyFiles(this.projectDir, scriptsDir, cachedManifest)
+
+          if (dirtyFiles.length === 0) {
+            console.log('All scripts up to date — skipping compilation')
+          } else {
+            // Single-file mode per dirty file
+            const compiledCount = this.compileScriptsIncremental(compiler!, dirtyFiles, scriptsDir, outDir)
+            console.log(`Compiled ${compiledCount} script(s)`)
+
+            // Merge new entries into manifest
+            const allEntries = { ...(cachedManifest?.entries ?? {}) }
+            for (const f of dirtyFiles) {
+              const output = f.relativePath.replace(/\.ink$/, '.inkc')
+              allEntries[f.relativePath] = {
+                hash: f.hash,
+                output,
+                compiledAt: new Date().toISOString(),
+              }
+            }
+            const newManifest = {
+              version: 1 as const,
+              lastFullBuild: cachedManifest?.lastFullBuild ?? new Date().toISOString(),
+              grammarIrHash: currentGrammarHash,
+              entries: allEntries,
+            }
+            cacheStore.write(newManifest)
           }
         }
 
         const compiledFiles = readdirSync(outDir).filter(f => f.endsWith('.inkc'))
         inkManifest.scripts = compiledFiles
-        console.log(`Compiled ${compiledFiles.length} script(s)`)
       }
     }
 
@@ -249,5 +286,93 @@ writeFileSync('${grammarOutputPath.replace(/\\/g, '\\\\')}', result);
     mkdirSync(dirname(outputPath), { recursive: true })
     writeFileSync(outputPath, JSON.stringify(ir, null, 2))
     console.log(`Grammar IR written to ${outputPath}`)
+  }
+
+  private compileScriptsBatch(
+    compiler: string,
+    scriptsDir: string,
+    outDir: string,
+    distDir: string
+  ): void {
+    const isPrintingPress = compiler.endsWith('printing_press') || compiler.endsWith('printing_press.exe')
+    const compilerPath = compiler.replace(/\\/g, '/')
+    const scriptsDirFwd = scriptsDir.replace(/\\/g, '/')
+    const outDirFwd = outDir.replace(/\\/g, '/')
+
+    if (isPrintingPress) {
+      try {
+        execSync(
+          `"${compilerPath}" compile --sources "${scriptsDirFwd}" --out "${outDirFwd}"`,
+          { cwd: this.projectDir, stdio: 'pipe' } as any
+        )
+      } catch (e: any) {
+        const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '')
+        console.error('Ink compilation failed:\n' + output)
+        process.exit(1)
+      }
+    } else {
+      const javaCmd = (process.env['INK_JAVA'] || 'java').replace(/\\/g, '/')
+      const inkManifestPath = join(distDir, 'ink-manifest.json')
+      const grammarFlags = existsSync(inkManifestPath)
+        ? `--grammar "${join(distDir, JSON.parse(readFileSync(inkManifestPath, 'utf8')).grammar as string).replace(/\\/g, '/')}" `
+        : ''
+
+      try {
+        execSync(
+          `"${javaCmd}" -jar "${compilerPath}" compile ${grammarFlags}--sources "${scriptsDirFwd}" --out "${outDirFwd}"`,
+          { cwd: this.projectDir, stdio: 'pipe' } as any
+        )
+      } catch (e: any) {
+        const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '')
+        console.error('Ink compilation failed:\n' + output)
+        process.exit(1)
+      }
+    }
+  }
+
+  private compileScriptsIncremental(
+    compiler: string,
+    dirtyFiles: DirtyFile[],
+    scriptsDir: string,
+    outDir: string
+  ): number {
+    const isPrintingPress = compiler.endsWith('printing_press') || compiler.endsWith('printing_press.exe')
+    const compilerPath = compiler.replace(/\\/g, '/')
+    let compiled = 0
+
+    for (const dirty of dirtyFiles) {
+      const inputPath = join(this.projectDir, dirty.relativePath)
+      const outputPath = join(outDir, dirty.relativePath.replace(/^scripts\//, '').replace(/\.ink$/, '.inkc'))
+
+      // Ensure output subdirectory exists
+      mkdirSync(dirname(outputPath), { recursive: true })
+
+      const inputFwd = inputPath.replace(/\\/g, '/')
+      const outputFwd = outputPath.replace(/\\/g, '/')
+
+      let ok = false
+      if (isPrintingPress) {
+        const result = spawnSync(`"${compilerPath}" compile "${inputFwd}" -o "${outputFwd}"`, {
+          shell: true,
+          cwd: this.projectDir,
+        })
+        ok = result.status === 0
+      } else {
+        const javaCmd = (process.env['INK_JAVA'] || 'java').replace(/\\/g, '/')
+        const result = spawnSync(
+          `"${javaCmd}" -jar "${compilerPath}" compile "${inputFwd}" -o "${outputFwd}"`,
+          { shell: true, cwd: this.projectDir }
+        )
+        ok = result.status === 0
+      }
+
+      if (!ok) {
+        console.error(`Failed to compile ${dirty.relativePath}`)
+        process.exit(1)
+      }
+      compiled++
+    }
+
+    return compiled
   }
 }

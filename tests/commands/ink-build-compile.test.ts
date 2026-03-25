@@ -13,6 +13,7 @@ const MOCK_COMPILER = join(FIXTURE, 'mock-printing_press.sh')
 describe('ink build .ink compilation', () => {
   beforeEach(() => {
     try { rmSync(join(FIXTURE, 'dist'), { recursive: true }) } catch {}
+    try { rmSync(join(FIXTURE, '.quill/cache'), { recursive: true }) } catch {}
   })
 
   it('compiles .ink files to .inkc in dist/scripts/', () => {
