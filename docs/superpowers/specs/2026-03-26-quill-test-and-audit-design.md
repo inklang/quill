@@ -29,20 +29,74 @@ Runs tests for an Ink grammar package. Expects a `tests/` directory in the proje
 quill test --ink           # compile and run Ink test files
 ```
 
-**Test file convention:** `tests/*_test.ink`
+**Test file convention:** `tests/*_test.ink` — files matching `*_test.ink` in the `tests/` directory. Non-recursive (no subdirectories). Files named `*_test.ink` but containing no `fn test_` functions are skipped with a warning.
 
-**Behavior:**
-1. Discover all `tests/*_test.ink` files
-2. For each test file, compile it using the Ink compiler (via `INK_COMPILER` env var, same as `quill build`)
-3. Execute the compiled test bytecode
-4. Collect pass/fail results
+**Test file format:**
 
-**Test file format** (to define):
-- Test functions prefixed with `test_` or `fn test_`
-- Use Ink's built-in `assert(condition)` function to assert conditions
-- Test runner reports: total tests, passed, failed, list of failures
+```ink
+# tests/math_test.ink
 
-If no `tests/` directory exists, print a friendly message and exit 0 (no tests to run is not an error).
+fn test_addition() {
+  assert(2 + 2 == 4, "addition should work")
+}
+
+fn test_multiplication() {
+  assert(3 * 4 == 12)
+}
+
+fn test_string_concat() {
+  assert("hello" + " " + "world" == "hello world")
+}
+```
+
+- **Test functions:** declared with `fn test_<name>()` — no arguments, no return value
+- **`assert(condition, message?)`:** built-in function provided by Ink runtime. Throws an `AssertionError` if condition is falsy. Optional `message` string appears in failure output.
+- **`fail(message)`:** built-in function. Throws immediately with `message`.
+- All code outside functions runs first (for setup), then each `test_` function runs in declaration order.
+
+**Execution model:**
+1. Quill discovers all `tests/*_test.ink` files (non-recursive)
+2. Compiles each test file using the Ink compiler (single-file compile, same as scripts)
+3. For each compiled `.inkc`, Quill spawns the Ink VM with a special `TestContext` that:
+   - Catches thrown `AssertionError` or `Error` objects
+   - Records pass/fail per test function
+   - Collects any `print()` output for diagnostics
+4. Results are aggregated and printed
+
+**Error handling:** If a test file fails to compile, it is reported as FAILED with the compiler error and the command exits non-zero. If one test function fails within a file, other test functions in that file still run (no early exit).
+
+**Output format (text):**
+```
+Running Ink tests...
+
+tests/math_test.ink:
+  ✓ test_addition
+  ✗ test_multiplication
+    Assertion failed: expected 12, got 15
+  ✓ test_string_concat
+
+2 passed, 1 failed
+```
+
+**Output format (--json):**
+```json
+{
+  "passed": 2,
+  "failed": 1,
+  "suites": [
+    {
+      "file": "tests/math_test.ink",
+      "tests": [
+        { "name": "test_addition", "status": "passed" },
+        { "name": "test_multiplication", "status": "failed", "error": "Assertion failed: expected 12, got 15" },
+        { "name": "test_string_concat", "status": "passed" }
+      ]
+    }
+  ]
+}
+```
+
+**Partial failure:** If any test fails, exit code is 1. Files with no `fn test_*` functions are skipped with a warning. If `tests/` does not exist, exit 0 with `No tests to run.`
 
 ---
 
@@ -89,13 +143,15 @@ Scans `.inkc` bytecode files from the package for disallowed operations.
 **Output format:**
 ```
 scripts/event_handler.inkc:
-  WARNING: file_write operation detected (line 42)
-    Purpose: writes to /plugins/ink/data.json
+  WARNING: file_write operation detected
+    Contains write to /plugins/ink/data.json
 
 scripts/network.inkc:
   BLOCKED: http_request operation detected
     Cannot be allowed in published packages.
 ```
+
+Note: bytecode is JSON, so references are to the operation name and context (e.g., the file path being written), not source line numbers.
 
 If no issues found: print `No bytecode safety issues found.`
 
