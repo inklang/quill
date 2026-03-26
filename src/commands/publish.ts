@@ -66,9 +66,13 @@ export class PublishCommand {
       ))
     }
 
-    if (manifest.target) {
+    // Send all targets: explicit manifest.target + keys from manifest.targets table
+    const targetsToSend = manifest.target
+      ? [manifest.target, ...Object.keys(manifest.targets ?? {})]
+      : Object.keys(manifest.targets ?? []);
+    if (targetsToSend.length > 0) {
       parts.push(Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="targets"\r\n\r\n${JSON.stringify([manifest.target])}\r\n`
+        `--${boundary}\r\nContent-Disposition: form-data; name="targets"\r\n\r\n${JSON.stringify([...new Set(targetsToSend)])}\r\n`
       ))
     }
 
