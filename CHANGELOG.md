@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.3.8 — 2026-03-26
+
+### Added
+
+- `quill uninstall` alias for `quill remove`.
+- `quill outdated` — checks installed packages for newer versions available.
+- `quill unpublish [version]` — removes a published package version from the registry.
+- `quill install` now reads `quill.lock` for deterministic installs when a locked version satisfies the dependency range.
+- `quill add` now updates `quill.lock` after installing.
+- `quill update` only rewrites `ink-package.toml` when dependencies actually changed.
+
+### Changed
+
+- `quill init` description now correctly says "ink-package.toml" instead of "quill.toml".
+
 ## 0.3.7 — 2026-03-26
 
 ### Fixed
