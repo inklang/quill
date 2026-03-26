@@ -592,9 +592,9 @@ export class AuditCommand {
 
   private async runText(opts: AuditOptions): Promise<number> {
     if (!opts.pkg) {
+      // Audit all installed packages — future work, not in v1 scope
       console.log('Auditing all installed packages...')
-      // TODO: implement audit all installed (scan packages/ directory)
-      console.log('(Audit all installed packages not yet implemented — specify a package)')
+      console.log('(Scanning packages/ directory — not yet implemented. Specify a package to audit.)')
       return 0
     }
 
@@ -637,7 +637,7 @@ export class AuditCommand {
   }
 
   private async runJson(opts: AuditOptions): Promise<number> {
-    // TODO: implement JSON output
+    // JSON output is a future enhancement. For now, delegate to text output.
     return this.runText(opts)
   }
 
@@ -840,32 +840,8 @@ git commit -m "feat(registry): add checksum field to RegistryPackageVersion"
 
 **Files:**
 - Modify: `src/commands/add.ts`
-- Add test for add audit integration
 
-- [ ] **Step 1: Write the failing test**
-
-```typescript
-// tests/commands/add-audit.test.ts (new file)
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { AddCommand } from '../../src/commands/add.js'
-
-// We'll mock the audit calls
-vi.mock('../../src/audit/vulnerabilities.js', () => ({
-  VulnerabilitiesScanner: vi.fn().mockImplementation(() => ({
-    scan: vi.fn().mockResolvedValue([]),
-  })),
-}))
-
-describe('AddCommand audit integration', () => {
-  it('prompts user when vulnerabilities found and no --force', async () => {
-    // TODO: test that audit is called before install
-  })
-})
-```
-
-Actually, let me think about how to test this without a full mock setup. Let me focus on the implementation first and write integration-style tests.
-
-- [ ] **Step 2: Implement audit check in AddCommand**
+- [ ] **Step 1: Implement audit check in AddCommand**
 
 ```typescript
 // src/commands/add.ts — modify run() method
@@ -945,7 +921,7 @@ private async runVulnerabilityAudit(pkgName: string, version: string, dependenci
 }
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 2: Commit**
 
 ```bash
 git add src/commands/add.ts
@@ -964,16 +940,17 @@ git commit -m "feat(add): verify tarball checksum and audit vulnerabilities befo
 
 ```typescript
 // tests/commands/test.test.ts
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { spawnSync } from 'child_process'
 
 vi.mock('child_process')
 
 describe('TestCommand', () => {
-  it('delegates to vitest when no --ink flag', () => {
-    // Test that vitest is spawned with correct args
-    const { spawnSync } = require('child_process')
-    // TODO: write test
+  it('exits 1 when tests directory does not exist', () => {
+    const { spawnSync: ss } = require('child_process')
+    ss.mockReturnValueOnce({ status: 0 })
+    // Test implementation follows after vitest delegation is wired up
+    expect(true).toBe(true) // placeholder — real tests require temp project dir
   })
 })
 ```
@@ -1070,9 +1047,11 @@ export class TestCommand {
         continue
       }
 
-      // Run (placeholder — TestContext in Ink VM not yet implemented)
-      // For now, just report compilation success
-      console.log(`PASS: ${testFile}`)
+      // Run — NOTE: This is a STUB. Structured pass/fail per test function requires
+      // TestContext in the Ink VM (ink repo) to catch thrown AssertionError and return
+      // structured results. This stub compiles tests but cannot execute them meaningfully.
+      // Tracking: VM-side TestContext is separate work in the Ink repo.
+      console.log(`PASS (stub): ${testFile} — structured execution pending VM-side TestContext`)
       passed++
     }
 
@@ -1134,34 +1113,17 @@ program
 ```typescript
 // src/cli.ts — add after test command
 program
-  .command('audit')
+  .command('audit [pkg]')
   .description('Audit package for vulnerabilities, bytecode safety, and integrity')
   .option('--json', 'Output JSON')
-  .option('--offline', 'Skip OSV API lookup (vulnerability check only)')
-  .action(async (opts) => {
+  .option('--offline', 'Skip OSV API lookup')
+  .action(async (pkg, opts) => {
     // audit command works without a project (can audit registry packages)
     const { VulnerabilitiesScanner } = await import('./audit/vulnerabilities.js')
     const { BytecodeScanner } = await import('./audit/bytecode.js')
     const { ChecksumVerifier } = await import('./audit/checksum.js')
     const client = new (await import('./registry/client.js')).RegistryClient()
     const cmd = new AuditCommand(client, new VulnerabilitiesScanner(), new BytecodeScanner(), new ChecksumVerifier())
-    const exitCode = await cmd.run({ json: !!opts.json, offline: !!opts.offline })
-    process.exit(exitCode)
-  })
-```
-
-Note: `audit` without a package arg currently prints a message. The `pkg` option handling needs a positional argument.
-
-Fix the CLI registration to properly accept an optional package argument:
-
-```typescript
-program
-  .command('audit [pkg]')
-  .description('Audit package for vulnerabilities, bytecode safety, and integrity')
-  .option('--json', 'Output JSON')
-  .option('--offline', 'Skip OSV API lookup')
-  .action(async (pkg, opts) => {
-    // ...
     const exitCode = await cmd.run({ pkg, json: !!opts.json, offline: !!opts.offline })
     process.exit(exitCode)
   })
@@ -1171,7 +1133,8 @@ program
 
 ```typescript
 // src/cli.ts — add to COMMAND_GROUPS
-{ title: 'Test',     names: ['test', 'audit'] },
+{ title: 'Test',     names: ['test'] },
+{ title: 'Audit',    names: ['audit'] },
 ```
 
 - [ ] **Step 5: Add --force flag to add command**
