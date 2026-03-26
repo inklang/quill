@@ -26,6 +26,7 @@ export interface PackageManifest {
   author?: string;
   main: string;
   dependencies: Record<string, string>;
+  target?: string;
   grammar?: GrammarConfig;
   runtime?: RuntimeConfig;  // Legacy
   server?: ServerConfig;    // Server config

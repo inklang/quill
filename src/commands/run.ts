@@ -53,19 +53,16 @@ export function deployScripts(serverDir: string, projectDir: string): void {
  * Exported for testing. Copies grammar JARs from packages/*\/dist/*.jar into
  * the server's plugins/Ink/plugins/ directory.
  */
-export function deployGrammarJars(serverDir: string, projectDir: string): void {
+export function deployGrammarJars(serverDir: string, projectDir: string, _target: string): void {
   const targetDir = join(serverDir, 'plugins', 'Ink', 'plugins')
   mkdirSync(targetDir, { recursive: true })
 
-  const packagesDir = join(projectDir, 'packages')
-  if (!existsSync(packagesDir)) return
+  const distDir = join(projectDir, 'dist')
+  if (!existsSync(distDir)) return
 
-  for (const pkgName of readdirSync(packagesDir)) {
-    const pkgDist = join(packagesDir, pkgName, 'dist')
-    if (!existsSync(pkgDist)) continue
-    for (const jar of readdirSync(pkgDist).filter(f => f.endsWith('.jar'))) {
-      copyFileSync(join(pkgDist, jar), join(targetDir, jar))
-    }
+  // Read JARs from dist/ (package artifacts were copied there by ink-build)
+  for (const jar of readdirSync(distDir).filter(f => f.endsWith('.jar'))) {
+    copyFileSync(join(distDir, jar), join(targetDir, jar))
   }
 }
 
@@ -96,7 +93,7 @@ export class RunCommand {
 
     // Deploy
     this.deployScripts()
-    this.deployGrammarJars()
+    this.deployGrammarJars(this.manifest.target ?? 'paper')
 
     // Spawn server
     let server = this.spawnServer(paperJarPath)
@@ -130,7 +127,7 @@ export class RunCommand {
         }
 
         this.deployScripts()
-        this.deployGrammarJars()
+        this.deployGrammarJars(this.manifest.target ?? 'paper')
         server = this.spawnServer(paperJarPath)
         attachExitHandler()
       } finally {
@@ -295,8 +292,8 @@ export class RunCommand {
     deployScripts(this.serverDir, this.projectDir)
   }
 
-  private deployGrammarJars(): void {
-    deployGrammarJars(this.serverDir, this.projectDir)
+  private deployGrammarJars(target: string): void {
+    deployGrammarJars(this.serverDir, this.projectDir, target)
   }
 
   private spawnServer(paperJarPath: string): ChildProcess {

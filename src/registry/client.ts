@@ -10,7 +10,8 @@ export class RegistryPackageVersion {
     public readonly url: string,
     public readonly dependencies: Record<string, string>,
     public readonly description?: string,
-    public readonly homepage?: string
+    public readonly homepage?: string,
+    public readonly targets?: string[],
   ) {}
 }
 
@@ -73,7 +74,10 @@ export class RegistryClient {
         versionMap.set(verStr, new RegistryPackageVersion(
           verStr,
           verData.url ?? '',
-          verData.dependencies ?? {}
+          verData.dependencies ?? {},
+          verData.description,
+          verData.homepage,
+          verData.targets,
         ));
       }
       packages.set(pkgName, new RegistryPackage(pkgName, versionMap));

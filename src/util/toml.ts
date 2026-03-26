@@ -49,6 +49,7 @@ export class TomlParser {
       description: pkg.description,
       author: pkg.author,
       main: pkg.main ?? pkg.entry ?? 'main',
+      target: pkg.target,
       dependencies: (data.dependencies as Record<string, string>) ?? {},
       grammar: grammarSection ? { entry: grammarSection.entry, output: grammarSection.output } : undefined,
       runtime: runtimeSection ? { jar: runtimeSection.jar, entry: runtimeSection.entry } : undefined,
@@ -65,6 +66,7 @@ export class TomlParser {
         main: manifest.main,
         ...(manifest.description ? { description: manifest.description } : {}),
         ...(manifest.author ? { author: manifest.author } : {}),
+        ...(manifest.target ? { target: manifest.target } : {}),
       },
       dependencies: manifest.dependencies,
     };

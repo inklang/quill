@@ -1,0 +1,7 @@
+[package]
+name = "my-plugin"
+version = "1.0.0"
+target = "paper"
+
+[dependencies]
+ink.mobs = "^1.0.0"
