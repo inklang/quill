@@ -19,6 +19,7 @@ import { InfoCommand } from './commands/info.js'
 import { DoctorCommand } from './commands/doctor.js'
 import { OutdatedCommand } from './commands/outdated.js'
 import { UnpublishCommand } from './commands/unpublish.js'
+import { CompletionsCommand } from './commands/completions.js'
 import { CacheCommand, CacheCleanCommand } from './cache/commands.js'
 import { existsSync } from 'fs'
 import { join } from 'path'
@@ -143,8 +144,10 @@ program
 program
   .command('login')
   .description('Generate a keypair and register with the registry')
-  .action(async () => {
-    await new LoginCommand().run()
+  .option('--token <token>', 'Registry token (for CI environments, skip browser auth)')
+  .option('--username <username>', 'Registry username (use with --token)')
+  .action(async (opts) => {
+    await new LoginCommand().run({ token: opts.token, username: opts.username })
   })
 
 program
@@ -216,6 +219,13 @@ program
     await new UnpublishCommand(projectDir).run(version)
   })
 
+program
+  .command('completions <shell>')
+  .description('Output shell completion script (bash, zsh, fish)')
+  .action(async (shell: string) => {
+    new CompletionsCommand().run(shell)
+  })
+
 const COMMAND_GROUPS = [
   { title: 'Project',      names: ['new', 'init'] },
   { title: 'Dependencies', names: ['add', 'remove', 'install', 'update', 'outdated', 'ls', 'clean'] },
@@ -223,6 +233,7 @@ const COMMAND_GROUPS = [
   { title: 'Cache',        names: ['cache'] },
   { title: 'Registry',     names: ['login', 'logout', 'publish', 'unpublish', 'search', 'info'] },
   { title: 'Doctor',       names: ['doctor'] },
+  { title: 'Meta',         names: ['completions'] },
 ]
 
 program.configureHelp({

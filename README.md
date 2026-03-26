@@ -57,6 +57,7 @@ quill run --no-watch          # start without file watching
 
 ```bash
 quill login                   # generate a keypair and register with the registry
+quill login --token <tok> --username <user>   # token-only login (CI environments)
 quill logout                  # remove your keypair from ~/.quillrc
 quill publish                 # publish your package to the registry
 quill unpublish [version]     # remove a published package version
@@ -75,6 +76,15 @@ quill cache-info clean        # remove build cache
 
 ```bash
 quill doctor                  # run diagnostics and check for common issues
+```
+
+### Shell completions
+
+```bash
+# Install completions for your shell
+quill completions bash >> ~/.bashrc       # bash
+quill completions zsh  > ~/.zsh/completion/_quill   # zsh
+quill completions fish > ~/.config/fish/completions/quill.fish  # fish
 ```
 
 ## Lockfile

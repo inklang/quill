@@ -21,9 +21,28 @@ function getFreePort(): Promise<number> {
   })
 }
 
+export interface LoginOptions {
+  token?: string
+  username?: string
+}
+
 export class LoginCommand {
-  async run(): Promise<void> {
+  async run(options: LoginOptions = {}): Promise<void> {
     const registry = process.env['QUILL_REGISTRY'] ?? 'https://lectern.inklang.org'
+
+    // Token-only login for CI environments
+    if (options.token && options.username) {
+      writeRc({ token: options.token, username: options.username, registry })
+      console.log(`Logged in as ${options.username} (token provided via --token)`)
+      return
+    }
+
+    if (options.token || options.username) {
+      console.error('Error: both --token and --username must be provided together.')
+      process.exit(1)
+    }
+
+    // Browser-based login
     const port = await getFreePort()
     const callbackUrl = `http://127.0.0.1:${port}/callback`
     const authUrl = `${registry}/cli-auth?callback=${encodeURIComponent(callbackUrl)}`

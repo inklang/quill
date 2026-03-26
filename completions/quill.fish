@@ -1,0 +1,37 @@
+# quill shell completions — fish
+# Save as ~/.config/fish/completions/quill.fish
+# Or install via: quill completions fish > ~/.config/fish/completions/quill.fish
+
+complete -c quill -f
+complete -c quill -n "__fish_use_subcommand" -a "new" -d "Create a new project"
+complete -c quill -n "__fish_use_subcommand" -a "init" -d "Initialize ink-package.toml"
+complete -c quill -n "__fish_use_subcommand" -a "add" -d "Add a package"
+complete -c quill -n "__fish_use_subcommand" -a "remove" -d "Remove a package"
+complete -c quill -n "__fish_use_subcommand" -a "uninstall" -d "Remove a package"
+complete -c quill -n "__fish_use_subcommand" -a "install" -d "Install all dependencies"
+complete -c quill -n "__fish_use_subcommand" -a "update" -d "Update dependencies"
+complete -c quill -n "__fish_use_subcommand" -a "outdated" -d "Check for newer versions"
+complete -c quill -n "__fish_use_subcommand" -a "ls" -d "List installed packages"
+complete -c quill -n "__fish_use_subcommand" -a "clean" -d "Remove cache"
+complete -c quill -n "__fish_use_subcommand" -a "build" -d "Compile scripts"
+complete -c quill -n "__fish_use_subcommand" -a "check" -d "Check for errors"
+complete -c quill -n "__fish_use_subcommand" -a "watch" -d "Watch and rebuild"
+complete -c quill -n "__fish_use_subcommand" -a "run" -d "Run Paper dev server"
+complete -c quill -n "__fish_use_subcommand" -a "login" -d "Log in to registry"
+complete -c quill -n "__fish_use_subcommand" -a "logout" -d "Log out"
+complete -c quill -n "__fish_use_subcommand" -a "publish" -d "Publish package"
+complete -c quill -n "__fish_use_subcommand" -a "unpublish" -d "Remove published package"
+complete -c quill -n "__fish_use_subcommand" -a "search" -d "Search registry"
+complete -c quill -n "__fish_use_subcommand" -a "info" -d "Show package info"
+complete -c quill -n "__fish_use_subcommand" -a "doctor" -d "Run diagnostics"
+complete -c quill -n "__fish_use_subcommand" -a "cache-info" -d "Show cache info"
+
+complete -c quill -n "__fish_seen_subcommand_from doctor" -a "--json"
+complete -c quill -n "__fish_seen_subcommand_from new" -l package -d "Create grammar package"
+complete -c quill -n "__fish_seen_subcommand_from new" -l template -r -a "blank hello-world full" -d "Template"
+complete -c quill -n "__fish_seen_subcommand_from build" -s F -l full -d "Force full recompilation"
+complete -c quill -n "__fish_seen_subcommand_from run" -l no-watch -d "Start without file watching"
+complete -c quill -n "__fish_seen_subcommand_from info" -l version -r -d "Show specific version"
+complete -c quill -n "__fish_seen_subcommand_from info" -l json -d "Output JSON"
+complete -c quill -n "__fish_seen_subcommand_from search" -l page -r -d "Page number"
+complete -c quill -n "__fish_seen_subcommand_from search" -l json -d "Output JSON"

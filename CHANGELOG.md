@@ -10,6 +10,9 @@
 - `quill install` now reads `quill.lock` for deterministic installs when a locked version satisfies the dependency range.
 - `quill add` now updates `quill.lock` after installing.
 - `quill update` only rewrites `ink-package.toml` when dependencies actually changed.
+- `quill completions <shell>` — output shell completion scripts (bash, zsh, fish).
+- `quill login --token <token> --username <user>` — token-only login for CI environments.
+- GitHub Actions CI workflow (runs on Node 18/20/22 + Windows).
 
 ### Changed
 
