@@ -13,12 +13,14 @@ import { pathToFileURL, fileURLToPath } from 'url'
 import { resolveCompiler } from '../util/compiler.js'
 
 export class InkBuildCommand {
+  private distDir!: string
+
   constructor(private projectDir: string) {}
 
   async run(opts: { full?: boolean } = {}): Promise<void> {
     const manifest = TomlParser.read(join(this.projectDir, 'ink-package.toml'))
-    const distDir = join(this.projectDir, 'dist')
-    mkdirSync(distDir, { recursive: true })
+    this.distDir = join(this.projectDir, 'dist')
+    mkdirSync(this.distDir, { recursive: true })
 
     const inkManifest: Record<string, unknown> = {
       name: manifest.name,
@@ -84,7 +86,7 @@ export class InkBuildCommand {
         }
 
         const jarFilename = jars[0]
-        copyFileSync(join(libsDir, jarFilename), join(distDir, jarFilename))
+        copyFileSync(join(libsDir, jarFilename), join(this.distDir, jarFilename))
         inkManifest.runtime = {
           jar: jarFilename,
           entry: manifest.runtime.entry,
@@ -98,13 +100,18 @@ export class InkBuildCommand {
           process.exit(1)
         }
         const jarFilename = basename(manifest.runtime.jar)
-        copyFileSync(jarSource, join(distDir, jarFilename))
+        copyFileSync(jarSource, join(this.distDir, jarFilename))
         inkManifest.runtime = {
           jar: jarFilename,
           entry: manifest.runtime.entry,
         }
         console.log(`Runtime jar copied to dist/${jarFilename}`)
       }
+    }
+
+    // Copy artifacts from installed packages matching project target
+    if (manifest.target) {
+      this.copyPackageArtifacts(manifest.target)
     }
 
     // Compile .ink scripts
@@ -134,13 +141,13 @@ export class InkBuildCommand {
           )
         }
 
-        const outDir = join(distDir, 'scripts')
+        const outDir = join(this.distDir, 'scripts')
         mkdirSync(outDir, { recursive: true })
 
         if (opts.full) {
           // Full rebuild: batch mode + fresh manifest
-          this.compileScriptsBatch(compiler!, scriptsDir, outDir, distDir)
-          const grammarHash = hashGrammarIr(distDir)
+          this.compileScriptsBatch(compiler!, scriptsDir, outDir, this.distDir)
+          const grammarHash = hashGrammarIr(this.distDir)
           const dirtyFiles: DirtyFile[] = inkFiles.map(f => ({
             relativePath: `scripts/${f}`.replace(/\\/g, '/'),
             hash: hashFile(join(scriptsDir, f)),
@@ -168,7 +175,7 @@ export class InkBuildCommand {
           const cachedManifest = cacheStore.read()
 
           // Grammar IR change invalidates all scripts
-          const currentGrammarHash = hashGrammarIr(distDir)
+          const currentGrammarHash = hashGrammarIr(this.distDir)
           const grammarChanged = cachedManifest && cachedManifest.grammarIrHash !== currentGrammarHash
 
           if (grammarChanged) {
@@ -222,8 +229,49 @@ export class InkBuildCommand {
     }
 
     // Write ink-manifest.json
-    writeFileSync(join(distDir, 'ink-manifest.json'), JSON.stringify(inkManifest, null, 2))
+    writeFileSync(join(this.distDir, 'ink-manifest.json'), JSON.stringify(inkManifest, null, 2))
     console.log('Wrote dist/ink-manifest.json')
+  }
+
+  /**
+   * Copy runtime artifacts from installed packages matching the project target
+   * into the project's dist/ directory.
+   */
+  private copyPackageArtifacts(target: string): void {
+    const packagesDir = join(this.projectDir, 'packages')
+    if (!existsSync(packagesDir)) return
+
+    for (const pkgName of readdirSync(packagesDir)) {
+      const pkgTargetDir = join(packagesDir, pkgName, target)
+      const manifestPath = join(pkgTargetDir, 'ink-manifest.json')
+
+      if (!existsSync(manifestPath)) {
+        console.error(`Error: Package ${pkgName} has no variant for target "${target}".`)
+        process.exit(1)
+      }
+
+      let pkgManifest: any
+      try {
+        pkgManifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+      } catch {
+        console.error(`Error: Invalid ink-manifest.json in package ${pkgName}`)
+        process.exit(1)
+      }
+
+      if (pkgManifest.target !== target) {
+        console.error(`Error: Package ${pkgName} is installed for target "${pkgManifest.target}" but project targets "${target}".`)
+        console.error(`       Run quill reinstall to resolve.`)
+        process.exit(1)
+      }
+
+      // Copy runtime JAR if present
+      if (pkgManifest.runtime?.jar) {
+        const srcJar = join(pkgTargetDir, pkgManifest.runtime.jar)
+        if (existsSync(srcJar)) {
+          copyFileSync(srcJar, join(this.distDir, pkgManifest.runtime.jar))
+        }
+      }
+    }
   }
 
   private async buildGrammar(packageName: string, grammarEntry: string, grammarOutput: string): Promise<void> {
