@@ -40,5 +40,22 @@ describe('RegistryClient', () => {
       const ver = pkg.versions.get('1.0.0')
       expect(ver.targets).toBeUndefined()
     })
+
+    it('parseIndex reads checksum from version data', () => {
+      const json = JSON.stringify({
+        packages: {
+          'test.pkg': {
+            '1.0.0': {
+              url: 'http://example.com/test.pkg-1.0.0.tar.gz',
+              dependencies: {},
+              checksum: 'sha256:abc123',
+            }
+          }
+        }
+      })
+      const index = new RegistryClient().parseIndex(json)
+      const pkg = index.get('test.pkg')
+      expect(pkg?.versions.get('1.0.0')?.checksum).toBe('sha256:abc123')
+    })
   })
 })

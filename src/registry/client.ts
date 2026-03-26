@@ -12,6 +12,7 @@ export class RegistryPackageVersion {
     public readonly description?: string,
     public readonly homepage?: string,
     public readonly targets?: string[],
+    public readonly checksum?: string,  // sha256:<hash> of tarball
   ) {}
 }
 
@@ -36,6 +37,7 @@ export interface PackageInfo {
   dependencies: Record<string, string>;
   homepage?: string;
   targets?: string[];
+  checksum?: string;
 }
 
 export class RegistryClient {
@@ -79,6 +81,7 @@ export class RegistryClient {
           verData.description,
           verData.homepage,
           verData.targets,
+          verData.checksum,
         ));
       }
       packages.set(pkgName, new RegistryPackage(pkgName, versionMap));
@@ -203,6 +206,12 @@ export class RegistryClient {
       dependencies: pkgVer.dependencies,
       homepage: pkgVer.homepage,
       targets: pkgVer.targets,
+      checksum: pkgVer.checksum,
     };
+  }
+
+  async getChecksum(pkgName: string, version: string): Promise<string | null> {
+    const info = await this.getPackageInfo(pkgName, version);
+    return info?.checksum ?? null;
   }
 }
