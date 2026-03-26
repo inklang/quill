@@ -14,3 +14,4 @@ compiler/
 # Test fixtures
 tests/fixtures/gradle-project/runtime/.gradle/
 tests/fixtures/gradle-project/runtime/build/
+.worktrees/
