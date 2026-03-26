@@ -1,6 +1,7 @@
 import { TomlParser } from '../util/toml.js';
 import { RegistryClient } from '../registry/client.js';
 import { FileUtils } from '../util/fs.js';
+import { Lockfile, LockfileEntry } from '../lockfile.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -107,6 +108,21 @@ export class AddCommand {
     // Update ink-package.toml
     const updated = { ...manifest, dependencies: { ...manifest.dependencies, [pkgName]: `^${pkgVersion.version}` } };
     fs.writeFileSync(inkPackageTomlPath, TomlParser.write(updated));
+
+    // Update quill.lock
+    const lockfilePath = path.join(this.projectDir, 'quill.lock')
+    let lockedPkgs: Record<string, LockfileEntry> = {}
+    if (fs.existsSync(lockfilePath)) {
+      try {
+        const existing = Lockfile.read(lockfilePath)
+        for (const [k, v] of Object.entries(existing.packages)) {
+          lockedPkgs[k] = v
+        }
+      } catch {}
+    }
+    lockedPkgs[`${pkgName}@${pkgVersion.version}`] = new LockfileEntry(pkgVersion.version, pkgVersion.url)
+    const lockfile = new Lockfile(new RegistryClient().registryUrl, lockedPkgs)
+    lockfile.write(lockfilePath)
 
     console.log(`Installed ${pkgName} v${pkgVersion.version} → packages/${pkgName.replace('/', '-')}`);
   }

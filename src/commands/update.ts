@@ -63,6 +63,7 @@ export class UpdateCommand {
 
       if (installedVersion === pkgVersion.version) {
         console.log(`${depName} v${pkgVersion.version} is already up to date.`)
+        updatedDeps[depName] = deps[depName]
       } else {
         if (alreadyInstalled) fs.rmSync(pkgDir, { recursive: true, force: true })
         FileUtils.ensureDir(cacheDir)
@@ -71,9 +72,9 @@ export class UpdateCommand {
         await FileUtils.downloadFile(pkgVersion.url, tarball)
         await FileUtils.extractTarGz(tarball, pkgDir)
         updatedCount++
+        updatedDeps[depName] = `^${pkgVersion.version}`
       }
 
-      updatedDeps[depName] = `^${pkgVersion.version}`
       lockedPkgs[`${depName}@${pkgVersion.version}`] = new LockfileEntry(pkgVersion.version, pkgVersion.url)
     }
 
@@ -85,8 +86,11 @@ export class UpdateCommand {
       }
     }
 
-    const updated = { ...manifest, dependencies: updatedDeps }
-    fs.writeFileSync(inkPackageTomlPath, TomlParser.write(updated))
+    // Only rewrite ink-package.toml if something was actually updated
+    if (updatedCount > 0) {
+      const updated = { ...manifest, dependencies: updatedDeps }
+      fs.writeFileSync(inkPackageTomlPath, TomlParser.write(updated))
+    }
 
     const lockfile = new Lockfile(client.registryUrl, lockedPkgs)
     lockfile.write(path.join(this.projectDir, 'quill.lock'))

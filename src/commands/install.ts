@@ -2,6 +2,8 @@ import { TomlParser } from '../util/toml.js';
 import { RegistryClient } from '../registry/client.js';
 import { FileUtils } from '../util/fs.js';
 import { Lockfile, LockfileEntry } from '../lockfile.js';
+import { Semver } from '../model/semver.js';
+import { SemverRange } from '../model/semver.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -18,14 +20,49 @@ export class InstallCommand {
     const manifest = TomlParser.read(inkPackageTomlPath);
     const client = new RegistryClient();
     const index = await client.fetchIndex();
+    const lockfilePath = path.join(this.projectDir, 'quill.lock')
 
     console.log(`Resolving dependencies for ${manifest.name}...`);
 
     const lockedPkgs: Record<string, LockfileEntry> = {};
     const packagesDir = path.join(this.projectDir, 'packages');
 
+    // Read existing lockfile if present
+    let existingLockfile: Map<string, LockfileEntry> = new Map();
+    if (fs.existsSync(lockfilePath)) {
+      try {
+        const existing = Lockfile.read(lockfilePath);
+        for (const [k, v] of Object.entries(existing.packages)) {
+          existingLockfile.set(k, v);
+        }
+      } catch {}
+    }
+
     for (const [depName, depRange] of Object.entries(manifest.dependencies)) {
-      const pkgVersion = client.findBestMatch(index, depName, depRange);
+      // Try to use locked version first (deterministic install)
+      let pkgVersion = null;
+      const semverRange = new SemverRange(depRange);
+
+      for (const [lockKey, lockEntry] of existingLockfile.entries()) {
+        if (!lockKey.startsWith(`${depName}@`)) continue;
+        const lockedVer = lockEntry.version;
+        try {
+          const parsed = Semver.parse(lockedVer);
+          if (semverRange.matches(parsed)) {
+            // Use the locked version — resolve fresh to get the URL but pin to locked version
+            const fresh = client.findBestMatch(index, depName, depRange);
+            if (fresh && fresh.version === lockedVer) {
+              pkgVersion = fresh;
+            }
+          }
+        } catch {}
+      }
+
+      // Fall back to latest satisfying version
+      if (!pkgVersion) {
+        pkgVersion = client.findBestMatch(index, depName, depRange);
+      }
+
       if (!pkgVersion) {
         console.error(`ERROR: No version of ${depName} satisfies ${depRange}`);
         return;
@@ -51,17 +88,17 @@ export class InstallCommand {
         const extractDir = path.join(cacheDir, `extract-${depName.replace('/', '-')}-${pkgVersion.version}`);
         await FileUtils.extractTarGz(tarball, extractDir);
 
-        const projectTarget = manifest.target;
+        const projTarget = manifest.target;
         let targetDir: string | null = null;
 
-        if (projectTarget) {
+        if (projTarget) {
           // Find the target subfolder
           const entries = fs.readdirSync(extractDir);
           for (const entry of entries) {
             const manifestPath = path.join(extractDir, entry, 'ink-manifest.json');
             if (fs.existsSync(manifestPath)) {
               const pkgManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-              if (pkgManifest.target === projectTarget) {
+              if (pkgManifest.target === projTarget) {
                 targetDir = entry;
                 break;
               }
@@ -69,7 +106,7 @@ export class InstallCommand {
           }
 
           if (!targetDir) {
-            console.error(`Error: Could not find variant for target "${projectTarget}" in package tarball.`);
+            console.error(`Error: Could not find variant for target "${projTarget}" in package tarball.`);
             fs.rmSync(extractDir, { recursive: true, force: true });
             return;
           }
@@ -102,7 +139,7 @@ export class InstallCommand {
     }
 
     const lockfile = new Lockfile(client.registryUrl, lockedPkgs);
-    lockfile.write(path.join(this.projectDir, 'quill.lock'));
+    lockfile.write(lockfilePath);
 
     console.log(`Installed ${Object.keys(lockedPkgs).length} package(s).`);
   }

@@ -17,6 +17,8 @@ import { UpdateCommand } from './commands/update.js'
 import { SearchCommand } from './commands/search.js'
 import { InfoCommand } from './commands/info.js'
 import { DoctorCommand } from './commands/doctor.js'
+import { OutdatedCommand } from './commands/outdated.js'
+import { UnpublishCommand } from './commands/unpublish.js'
 import { CacheCommand, CacheCleanCommand } from './cache/commands.js'
 import { existsSync } from 'fs'
 import { join } from 'path'
@@ -54,7 +56,7 @@ program
     await new NewCommand(projectDir).run(name, { isPackage: !!opts.package, template: opts.template })
   })
 
-program.command('init').description('Initialize quill.toml in existing project').action(async () => {
+program.command('init').description('Initialize ink-package.toml in existing project').action(async () => {
   await new InitCommand(projectDir).run();
 });
 
@@ -63,7 +65,7 @@ program.command('add <pkg>').description('Install a package').action(async (pkg)
   await new AddCommand(projectDir).run(pkg);
 });
 
-program.command('remove <pkg>').description('Uninstall a package').action(async (pkg) => {
+program.command('remove <pkg>').description('Uninstall a package').alias('uninstall').action(async (pkg) => {
   requireProject()
   await new RemoveCommand(projectDir).run(pkg);
 });
@@ -198,12 +200,28 @@ program
     await new DoctorCommand().run(!!opts.json)
   })
 
+program
+  .command('outdated')
+  .description('Check for packages with newer versions available')
+  .action(async () => {
+    requireProject()
+    await new OutdatedCommand(projectDir).run()
+  })
+
+program
+  .command('unpublish [version]')
+  .description('Remove a published package version from the registry')
+  .action(async (version?: string) => {
+    requireProject()
+    await new UnpublishCommand(projectDir).run(version)
+  })
+
 const COMMAND_GROUPS = [
   { title: 'Project',      names: ['new', 'init'] },
-  { title: 'Dependencies', names: ['add', 'remove', 'install', 'update', 'ls', 'clean'] },
+  { title: 'Dependencies', names: ['add', 'remove', 'install', 'update', 'outdated', 'ls', 'clean'] },
   { title: 'Build',        names: ['build', 'check', 'watch', 'run'] },
   { title: 'Cache',        names: ['cache'] },
-  { title: 'Registry',     names: ['login', 'logout', 'publish', 'search', 'info'] },
+  { title: 'Registry',     names: ['login', 'logout', 'publish', 'unpublish', 'search', 'info'] },
   { title: 'Doctor',       names: ['doctor'] },
 ]
 
