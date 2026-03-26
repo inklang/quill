@@ -94,17 +94,18 @@ describe('deployScripts', () => {
     expect(deployed).not.toContain('stale.inkc');
   });
 
-  it('deploys grammar JARs from packages/*/dist/*.jar to plugins/Ink/plugins/', () => {
+  it('copies grammar JARs from dist/ to plugins/Ink/plugins/', () => {
     // Ensure the server plugin directory exists
     const targetDir = path.join(tmpDir, 'plugins', 'Ink', 'plugins');
     fs.mkdirSync(targetDir, { recursive: true });
 
-    // Place a grammar JAR in a package dist dir
-    const pkgDist = path.join(tmpDir, 'packages', 'ink.mobs', 'dist');
-    fs.mkdirSync(pkgDist, { recursive: true });
-    fs.writeFileSync(path.join(pkgDist, 'ink.mobs-0.1.0.jar'), 'jar-bytes');
+    // Place a JAR in project dist/ (as produced by ink-build)
+    const distDir = path.join(tmpDir, 'dist');
+    fs.mkdirSync(distDir, { recursive: true });
+    fs.writeFileSync(path.join(distDir, 'ink.mobs-0.1.0.jar'), 'jar-bytes');
 
-    deployGrammarJars(tmpDir, tmpDir);
+    // deployGrammarJars now reads from dist/ (package JARs are copied there by ink-build)
+    deployGrammarJars(tmpDir, tmpDir, 'paper');
 
     expect(fs.existsSync(path.join(targetDir, 'ink.mobs-0.1.0.jar'))).toBe(true);
   });
