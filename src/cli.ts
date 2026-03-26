@@ -22,6 +22,8 @@ import { UnpublishCommand } from './commands/unpublish.js'
 import { CompletionsCommand } from './commands/completions.js'
 import { CacheCommand, CacheCleanCommand, CacheLsCommand } from './cache/commands.js'
 import { WhyCommand } from './commands/why.js'
+import { TestCommand } from './commands/test.js'
+import { AuditCommand } from './commands/audit.js'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 
@@ -72,9 +74,9 @@ program.command('init').description('Initialize ink-package.toml in existing pro
   await new InitCommand(projectDir).run();
 });
 
-program.command('add <pkg>').description('Install a package').action(async (pkg) => {
+program.command('add <pkg>').description('Install a package').option('--force', 'Skip audit confirmation').action(async (pkg, opts) => {
   requireProject()
-  await new AddCommand(projectDir).run(pkg);
+  await new AddCommand(projectDir).run(pkg, { force: !!opts.force });
 });
 
 program.command('remove <pkg>').description('Uninstall a package').alias('uninstall').action(async (pkg) => {
@@ -249,6 +251,34 @@ program
   })
 
 program
+  .command('test')
+  .description('Run tests')
+  .option('--ink', 'Run Ink package tests (tests/*_test.ink files)')
+  .option('--watch', 'Run in watch mode (vitest only)')
+  .option('--json', 'Output JSON')
+  .action(async (opts) => {
+    requireProject()
+    const cmd = new TestCommand(projectDir)
+    const exitCode = await cmd.run({ ink: !!opts.ink, watch: !!opts.watch, json: !!opts.json })
+    process.exit(exitCode)
+  })
+
+program
+  .command('audit [pkg]')
+  .description('Audit package for vulnerabilities, bytecode safety, and integrity')
+  .option('--json', 'Output JSON')
+  .option('--offline', 'Skip OSV API lookup')
+  .action(async (pkg, opts) => {
+    const { VulnerabilitiesScanner } = await import('./audit/vulnerabilities.js')
+    const { BytecodeScanner } = await import('./audit/bytecode.js')
+    const { ChecksumVerifier } = await import('./audit/checksum.js')
+    const client = new (await import('./registry/client.js')).RegistryClient()
+    const cmd = new AuditCommand(client, new VulnerabilitiesScanner(), new BytecodeScanner(), new ChecksumVerifier())
+    const exitCode = await cmd.run({ pkg, json: !!opts.json, offline: !!opts.offline })
+    process.exit(exitCode)
+  })
+
+program
   .command('completions <shell>')
   .description('Output shell completion script (bash, zsh, fish)')
   .action(async (shell: string) => {
@@ -261,6 +291,8 @@ const COMMAND_GROUPS = [
   { title: 'Build',        names: ['build', 'check', 'watch', 'run'] },
   { title: 'Cache',        names: ['cache'] },
   { title: 'Registry',     names: ['login', 'logout', 'publish', 'unpublish', 'search', 'info'] },
+  { title: 'Test',         names: ['test'] },
+  { title: 'Audit',        names: ['audit'] },
   { title: 'Doctor',       names: ['doctor'] },
   { title: 'Meta',         names: ['completions'] },
 ]
