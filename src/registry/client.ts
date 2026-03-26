@@ -8,7 +8,9 @@ export class RegistryPackageVersion {
   constructor(
     public readonly version: string,
     public readonly url: string,
-    public readonly dependencies: Record<string, string>
+    public readonly dependencies: Record<string, string>,
+    public readonly description?: string,
+    public readonly homepage?: string
   ) {}
 }
 
@@ -19,9 +21,24 @@ export class RegistryPackage {
   ) {}
 }
 
+export interface SearchResult {
+  name: string;
+  version: string;
+  description: string;
+  score: number;
+}
+
+export interface PackageInfo {
+  name: string;
+  version: string;
+  description: string;
+  dependencies: Record<string, string>;
+  homepage?: string;
+}
+
 export class RegistryClient {
   constructor(
-    public readonly registryUrl: string = process.env['LECTERN_REGISTRY'] ?? 'https://packages.inklang.org'
+    public readonly registryUrl: string = process.env['LECTERN_REGISTRY'] ?? 'https://lectern.inklang.org'
   ) {}
 
   readAuthToken(): string | null {
@@ -141,5 +158,45 @@ export class RegistryClient {
     }
 
     return best?.ver ?? null;
+  }
+
+  async searchPackages(query: string): Promise<SearchResult[]> {
+    const url = `${this.registryUrl}/api/search?q=${encodeURIComponent(query)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Search failed: ${res.status}`);
+    return await res.json() as SearchResult[];
+  }
+
+  async getPackageInfo(name: string, version?: string): Promise<PackageInfo | null> {
+    const index = await this.fetchIndex();
+
+    // Handle both Map and Proxy returned by fetchIndex
+    let pkg: RegistryPackage | undefined;
+    if (index instanceof Map) {
+      pkg = index.get(name);
+    } else {
+      const getFn = (index as any).get || (index as any).getRegistryPackage;
+      if (getFn) pkg = getFn(name);
+    }
+
+    if (!pkg) return null;
+
+    // Find latest version if none specified
+    const versions = [...pkg.versions.entries()]
+      .sort((a, b) => Semver.parse(b[0]).compareTo(Semver.parse(a[0])));
+
+    const targetVersion = version ?? versions[0]?.[0];
+    if (!targetVersion) return null;
+
+    const pkgVer = pkg.versions.get(targetVersion);
+    if (!pkgVer) return null;
+
+    return {
+      name,
+      version: targetVersion,
+      description: pkgVer.description ?? '',
+      dependencies: pkgVer.dependencies,
+      homepage: pkgVer.homepage,
+    };
   }
 }

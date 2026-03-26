@@ -1,15 +1,7 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-
-const execAsync = promisify(exec);
-
-// Convert Windows path to MSYS-compatible path for tar
-function toMsysPath(winPath: string): string {
-  return winPath.replace(/\\/g, '/').replace(/^([A-Za-z]):/, '/$1');
-}
+import * as tar from 'tar';
 
 export class FileUtils {
   /**
@@ -17,8 +9,7 @@ export class FileUtils {
    */
   static async extractTarGz(tarballPath: string, destDir: string): Promise<void> {
     fs.mkdirSync(destDir, { recursive: true });
-    // Use tar CLI — most portable across platforms
-    await execAsync(`tar -xzf "${toMsysPath(tarballPath)}" -C "${toMsysPath(destDir)}"`);
+    await tar.x({ file: tarballPath, cwd: destDir });
   }
 
   /**
@@ -33,12 +24,26 @@ export class FileUtils {
   }
 
   /**
+   * Download a file atomically: stream to dest+'.tmp', then rename on success.
+   * Uses fetch() which auto-follows HTTP redirects (required for GitHub releases URLs).
+   * If interrupted, the .tmp file is left behind and will be retried on next call.
+   */
+  static async downloadFileAtomic(url: string, destPath: string): Promise<void> {
+    const tmpPath = destPath + '.tmp';
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Failed to download ${url}: ${res.status}`);
+    const buf = await res.arrayBuffer();
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    fs.writeFileSync(tmpPath, Buffer.from(buf));
+    fs.renameSync(tmpPath, destPath);
+  }
+
+  /**
    * Pack files into a tar.gz archive.
    */
   static async packTarGz(sourceDir: string, destPath: string, includes: string[]): Promise<void> {
     fs.mkdirSync(path.dirname(destPath), { recursive: true });
-    const includeArgs = includes.map(i => `"${i}"`).join(' ');
-    await execAsync(`tar -czf "${toMsysPath(destPath)}" ${includeArgs}`, { cwd: sourceDir });
+    await tar.c({ gzip: true, file: destPath, cwd: sourceDir }, includes);
   }
 
   /**

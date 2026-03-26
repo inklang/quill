@@ -14,6 +14,7 @@ export class TomlParser {
 
     const grammarSection = (data as any).grammar;
     const runtimeSection = (data as any).runtime;
+    const serverSection = (data as any).server;
     return {
       name: pkg.name,
       version: pkg.version ?? '0.0.0',
@@ -28,6 +29,11 @@ export class TomlParser {
       runtime: runtimeSection ? {
         jar: runtimeSection.jar,
         entry: runtimeSection.entry,
+      } : undefined,
+      server: serverSection ? {
+        paper: serverSection.paper,
+        jar: serverSection.jar,
+        path: serverSection.path,
       } : undefined,
     };
   }
@@ -45,6 +51,7 @@ export class TomlParser {
     };
     if (manifest.grammar) data.grammar = manifest.grammar;
     if (manifest.runtime) data.runtime = manifest.runtime;
+    if (manifest.server) data.server = manifest.server;
     return toml.stringify(data as any);
   }
 }

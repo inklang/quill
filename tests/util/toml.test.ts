@@ -56,3 +56,70 @@ ink-core = "^1.0.0"
     fs.unlinkSync(filePath);
   });
 });
+
+describe('TomlParser with server section', () => {
+  const tmpDir = os.tmpdir();
+
+  it('parses [server] section with all fields', () => {
+    const content = `
+[package]
+name = "my-project"
+version = "0.1.0"
+main = "main"
+
+[server]
+paper = "1.21.4"
+jar = "path/to/paper.jar"
+path = "/custom/server"
+`;
+    const filePath = path.join(tmpDir, 'quill-server-test-' + Date.now() + '.toml');
+    fs.writeFileSync(filePath, content);
+
+    const manifest = TomlParser.read(filePath);
+    expect(manifest.server).toBeDefined();
+    expect(manifest.server!.paper).toBe('1.21.4');
+    // jar must be preserved exactly as written — resolution happens at runtime, not parse time
+    expect(manifest.server!.jar).toBe('path/to/paper.jar');
+    expect(manifest.server!.path).toBe('/custom/server');
+
+    fs.unlinkSync(filePath);
+  });
+
+  it('parses [server] section with only paper field', () => {
+    const content = `
+[package]
+name = "my-project"
+version = "0.1.0"
+main = "main"
+
+[server]
+paper = "1.20.1"
+`;
+    const filePath = path.join(tmpDir, 'quill-server-paper-only-' + Date.now() + '.toml');
+    fs.writeFileSync(filePath, content);
+
+    const manifest = TomlParser.read(filePath);
+    expect(manifest.server).toBeDefined();
+    expect(manifest.server!.paper).toBe('1.20.1');
+    expect(manifest.server!.jar).toBeUndefined();
+    expect(manifest.server!.path).toBeUndefined();
+
+    fs.unlinkSync(filePath);
+  });
+
+  it('returns undefined server when [server] section is absent', () => {
+    const content = `
+[package]
+name = "my-project"
+version = "0.1.0"
+main = "main"
+`;
+    const filePath = path.join(tmpDir, 'quill-no-server-test-' + Date.now() + '.toml');
+    fs.writeFileSync(filePath, content);
+
+    const manifest = TomlParser.read(filePath);
+    expect(manifest.server).toBeUndefined();
+
+    fs.unlinkSync(filePath);
+  });
+});

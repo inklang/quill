@@ -3,6 +3,7 @@ import { success as splash } from '../ui/ascii.js'
 import { RegistryClient } from '../registry/client.js'
 import { FileUtils } from '../util/fs.js'
 import { InkBuildCommand } from './ink-build.js'
+import { readRc } from '../util/keys.js'
 import { join } from 'path'
 import { existsSync, readFileSync } from 'fs'
 import { tmpdir } from 'os'
@@ -18,10 +19,9 @@ export class PublishCommand {
       process.exit(1)
     }
 
-    const client = new RegistryClient()
-    const token = client.readAuthToken()
-    if (!token) {
-      console.error('Not authenticated. Set QUILL_TOKEN or add token to ~/.quillrc')
+    const rc = readRc()
+    if (!rc || !rc.token) {
+      console.error('Not logged in. Run `quill login` first.')
       process.exit(1)
     }
 
@@ -35,18 +35,50 @@ export class PublishCommand {
       process.exit(1)
     }
 
-    const includes = ['ink-package.toml', 'dist']
-    const tarball = join(tmpdir(), `${manifest.name}-${manifest.version}.tar.gz`)
-    await FileUtils.packTarGz(this.projectDir, tarball, includes)
+    const tarballPath = join(tmpdir(), `${manifest.name}-${manifest.version}.tar.gz`)
+    await FileUtils.packTarGz(this.projectDir, tarballPath, ['ink-package.toml', 'dist'])
 
-    const url = `${client.registryUrl}/packages/${manifest.name}/${manifest.version}`
+    const tarball = readFileSync(tarballPath)
+
+    const description: string | undefined = manifest.description
+    const readmePath = join(this.projectDir, 'README.md')
+    const readme = existsSync(readmePath) ? readFileSync(readmePath, 'utf-8') : undefined
+
+    const boundary = '----QuillPublishBoundary'
+    const parts: Buffer[] = []
+
+    // tarball part
+    parts.push(Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="tarball"; filename="package.tar.gz"\r\nContent-Type: application/gzip\r\n\r\n`
+    ))
+    parts.push(tarball)
+    parts.push(Buffer.from('\r\n'))
+
+    if (description) {
+      parts.push(Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="description"\r\n\r\n${description}\r\n`
+      ))
+    }
+
+    if (readme) {
+      parts.push(Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="readme"\r\n\r\n${readme}\r\n`
+      ))
+    }
+
+    parts.push(Buffer.from(`--${boundary}--\r\n`))
+    const body = Buffer.concat(parts)
+
+    const client = new RegistryClient()
+    const url = `${client.registryUrl}/api/packages/${manifest.name}/${manifest.version}`
+
     const res = await fetch(url, {
       method: 'PUT',
       headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/gzip',
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Authorization': `Bearer ${rc.token}`,
       },
-      body: new Blob([readFileSync(tarball)]),
+      body,
     })
 
     if (!res.ok) {

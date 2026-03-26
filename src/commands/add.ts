@@ -1,7 +1,6 @@
 import { TomlParser } from '../util/toml.js';
 import { RegistryClient } from '../registry/client.js';
 import { FileUtils } from '../util/fs.js';
-import { SemverRange } from '../model/semver.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -13,12 +12,12 @@ export class AddCommand {
       ? pkgSpec.split('@')
       : [pkgSpec, null];
 
-    const range = version ? new SemverRange(`^${version}`) : new SemverRange('>=0.0.0');
+    const rangeStr = version ? `^${version}` : '*';
     const inkPackageTomlPath = path.join(this.projectDir, 'ink-package.toml');
 
     const manifest = fs.existsSync(inkPackageTomlPath)
       ? TomlParser.read(inkPackageTomlPath)
-      : { name: path.basename(this.projectDir), version: '0.1.0', entry: 'main', dependencies: {} };
+      : { name: path.basename(this.projectDir), version: '0.1.0', main: 'main', dependencies: {} };
 
     if (pkgName in manifest.dependencies) {
       console.log(`${pkgName} is already in dependencies.`);
@@ -27,7 +26,7 @@ export class AddCommand {
 
     const client = new RegistryClient();
     const index = await client.fetchIndex();
-    const pkgVersion = client.findBestMatch(index, pkgName, range.toString());
+    const pkgVersion = client.findBestMatch(index, pkgName, rangeStr);
 
     if (!pkgVersion) {
       console.log(`No version of ${pkgName} satisfies ${version ?? 'any version'}`);

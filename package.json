@@ -1,6 +1,6 @@
 {
   "name": "@inklang/quill",
-  "version": "0.1.0",
+  "version": "0.3.7",
   "description": "Package manager CLI for the Ink programming language",
   "type": "module",
   "exports": {
@@ -10,10 +10,17 @@
   "publishConfig": {
     "access": "public"
   },
+  "files": [
+    "dist/",
+    "src/",
+    "compiler/",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "main": "dist/cli.js",
   "bin": {
-    "quill": "./dist/cli.js",
-    "q": "./dist/cli.js"
+    "quill": "dist/cli.js",
+    "q": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -27,6 +34,7 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/tar": "^6.1.13",
     "tsx": "^4.21.0",
     "typescript": "^5.4.0",
     "vitest": "^1.4.0"
@@ -35,6 +43,20 @@
     "@iarna/toml": "^3.0.0",
     "chokidar": "^5.0.0",
     "colorette": "^2.0.20",
-    "commander": "^12.0.0"
-  }
+    "commander": "^12.0.0",
+    "tar": "^7.5.13"
+  },
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inklang/quill.git"
+  },
+  "author": "",
+  "bugs": {
+    "url": "https://github.com/inklang/quill/issues"
+  },
+  "homepage": "https://github.com/inklang/quill#readme"
 }

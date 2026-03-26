@@ -22,7 +22,7 @@ export class Lockfile {
       packages[key] = new LockfileEntry(val.version, val.resolutionSource);
     }
 
-    return new Lockfile(data.registry ?? 'https://packages.inklang.org', packages);
+    return new Lockfile(data.registry ?? 'https://lectern.inklang.org', packages);
   }
 
   write(filePath: string): void {

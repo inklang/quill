@@ -67,4 +67,16 @@ describe('FileUtils', () => {
     expect(fs.existsSync(destPath)).toBe(true);
     expect(fs.readFileSync(destPath, 'utf-8')).toContain('Disallow');
   }, 30000);
+
+  it('downloads a file atomically (no .tmp file left on success)', async () => {
+    const destPath = path.join(tmpDir, 'atomic-downloaded.txt');
+    const tmpPath = destPath + '.tmp';
+
+    await FileUtils.downloadFileAtomic('https://httpbin.org/robots.txt', destPath);
+
+    expect(fs.existsSync(destPath)).toBe(true);
+    expect(fs.readFileSync(destPath, 'utf-8')).toContain('Disallow');
+    // .tmp file must not exist after successful download
+    expect(fs.existsSync(tmpPath)).toBe(false);
+  }, 30000);
 });

@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const CLI = join(__dirname, '../../src/cli.js')
 const FIXTURE = join(__dirname, '../fixtures/scripts-compile-project')
-const MOCK_JAVA = join(FIXTURE, 'mock-java.sh')
+const MOCK_COMPILER = join(FIXTURE, 'mock-printing_press.sh')
 
 describe('ink build .ink compilation', () => {
   beforeEach(() => {
@@ -18,7 +18,7 @@ describe('ink build .ink compilation', () => {
   it('compiles .ink files to .inkc in dist/scripts/', () => {
     const result = execSync(
       `npx tsx ${CLI} build`,
-      { cwd: FIXTURE, encoding: 'utf8', env: { ...process.env, INK_COMPILER: '/tmp/fake-compiler.jar', INK_JAVA: MOCK_JAVA } }
+      { cwd: FIXTURE, encoding: 'utf8', env: { ...process.env, INK_COMPILER: MOCK_COMPILER } }
     )
     expect(result).toContain('Compiled 1 script')
 
@@ -41,15 +41,9 @@ describe('ink build .ink compilation', () => {
     expect(manifest.scripts).toBeUndefined()
   })
 
-  it('errors when INK_COMPILER is not set and scripts exist', () => {
-    try {
-      execSync(
-        `npx tsx ${CLI} build`,
-        { cwd: FIXTURE, encoding: 'utf8', stdio: 'pipe', env: { ...process.env, INK_COMPILER: '', INK_JAVA: '' } }
-      )
-      expect.unreachable('should have thrown')
-    } catch (e: any) {
-      expect(e.stderr.toString()).toContain('Ink compiler not found')
-    }
+  // Skipped: With auto-download, the compiler is downloaded when not found, so this no longer errors
+  it.skip('errors when INK_COMPILER is not set and scripts exist', () => {
+    // This test is obsolete - when no compiler is found, resolveCompiler() auto-downloads
+    // Instead of erroring, the build now proceeds after downloading the compiler
   })
 })

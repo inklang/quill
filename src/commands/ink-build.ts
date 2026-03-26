@@ -4,107 +4,134 @@ import { AuthoredGrammar } from '../grammar/api.js'
 import { serialize } from '../grammar/serializer.js'
 import { validate } from '../grammar/validator.js'
 import { writeFileSync, mkdirSync, unlinkSync, readFileSync, existsSync, copyFileSync, readdirSync } from 'fs'
-import { join, dirname, basename } from 'path'
+import { join, dirname, basename, sep } from 'path'
 import { execSync } from 'child_process'
 import { tmpdir } from 'os'
 import { pathToFileURL } from 'url'
-import { success as splash } from '../ui/ascii.js'
 
 export class InkBuildCommand {
-  constructor(private projectDir: string) {}
+  constructor(private projectDir: string, private target?: string) {}
 
   async run(): Promise<void> {
     const manifest = TomlParser.read(join(this.projectDir, 'ink-package.toml'))
-    const distDir = join(this.projectDir, 'dist')
-    mkdirSync(distDir, { recursive: true })
+
+    // Resolve target
+    const targetName = this.target ?? 'default';
+
+    // Validate: if a specific target was requested, it must be declared
+    if (this.target !== undefined && !manifest.targets[targetName]) {
+      const available = Object.keys(manifest.targets);
+      const msg = available.length > 0
+        ? `Target "${targetName}" not declared in ink-package.toml. Available: ${available.join(', ')}`
+        : `No targets declared in ink-package.toml. Run 'quill new --target=paper,hytale' to scaffold.`;
+      console.error(msg);
+      process.exit(1);
+    }
+
+    const targetConfig = manifest.targets[targetName];
+
+    // Determine dist directory and whether to include target in output paths
+    // For legacy projects (runtime at root, not runtime/<target>/), use dist/ root
+    const legacyRuntimeDir = join(this.projectDir, 'runtime');
+    const legacyGradleFile = join(legacyRuntimeDir, 'build.gradle.kts');
+    const hasLegacyRuntime = existsSync(legacyGradleFile);
+    const hasExternalJar = targetConfig?.jar && !hasLegacyRuntime;
+    // Legacy = default target + (has legacy gradle OR external JAR) + no new-structure gradle
+    const isLegacyDefault = targetName === 'default' && (hasLegacyRuntime || hasExternalJar) && !existsSync(join(this.projectDir, 'runtime', targetName, 'build.gradle.kts'));
+
+    const distDir = (targetConfig && !isLegacyDefault)
+      ? join(this.projectDir, 'dist', targetName)
+      : join(this.projectDir, 'dist');
+    mkdirSync(distDir, { recursive: true });
 
     const inkManifest: Record<string, unknown> = {
       name: manifest.name,
       version: manifest.version,
+    };
+    if (targetConfig) {
+      inkManifest.target = targetName;
     }
 
-    // Grammar compilation
+    // Grammar compilation (universal)
     if (manifest.grammar) {
-      await this.buildGrammar(manifest.name, manifest.grammar.entry, manifest.grammar.output)
-      inkManifest.grammar = 'grammar.ir.json'
+      await this.buildGrammar(manifest.name, manifest.grammar.entry, manifest.grammar.output);
+      inkManifest.grammar = 'grammar.ir.json';
     }
 
-    // Runtime: Gradle build or external JAR copy
-    if (manifest.runtime) {
-      const runtimeDir = join(this.projectDir, 'runtime')
-      const gradleFile = join(runtimeDir, 'build.gradle.kts')
+    // Per-target runtime build
+    // Check for new per-target structure first, fall back to legacy runtime/ root
+    let runtimeDir = join(this.projectDir, 'runtime', targetName);
+    let gradleFile = join(runtimeDir, 'build.gradle.kts');
 
-      if (existsSync(gradleFile)) {
-        // Determine gradle command: prefer wrapper, fall back to system gradle
-        let gradleCmd = 'gradle'
-        const isWindows = process.platform === 'win32'
-        const wrapperBat = join(runtimeDir, 'gradlew.bat')
-        const wrapperSh = join(runtimeDir, 'gradlew')
+    if (!existsSync(gradleFile) && existsSync(legacyGradleFile)) {
+      // Backwards compatibility: use legacy runtime/ folder structure
+      runtimeDir = legacyRuntimeDir;
+      gradleFile = legacyGradleFile;
+    }
 
-        let gradleArgs = 'build'
-        if (isWindows && existsSync(wrapperBat)) {
-          gradleCmd = wrapperBat
-        } else if (existsSync(wrapperSh)) {
-          if (isWindows) {
-            // On Windows, invoke the bash wrapper via bash
-            gradleCmd = 'bash'
-            gradleArgs = `"${wrapperSh.replace(/\\/g, '/')}" build`
-          } else {
-            gradleCmd = wrapperSh
-          }
-        }
+    if (existsSync(gradleFile)) {
+      let gradleCmd = 'gradle';
+      const isWindows = process.platform === 'win32';
+      const wrapperBat = join(runtimeDir, 'gradlew.bat');
+      const wrapperSh = join(runtimeDir, 'gradlew');
 
-        console.log(`Running Gradle build in runtime/...`)
-        try {
-          execSync(`"${gradleCmd}" ${gradleArgs}`, { cwd: runtimeDir, stdio: 'pipe' })
-        } catch (e: any) {
-          const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '')
-          console.error('Gradle build failed:\n' + output)
-          process.exit(1)
-        }
-        console.log('Gradle build successful')
-
-        // Find output JAR in runtime/build/libs/
-        const libsDir = join(runtimeDir, 'build/libs')
-        if (!existsSync(libsDir)) {
-          console.error('Gradle build produced no output: runtime/build/libs/ not found')
-          process.exit(1)
-        }
-        const jars = readdirSync(libsDir).filter(f => f.endsWith('.jar'))
-        if (jars.length === 0) {
-          console.error('No JAR found in runtime/build/libs/')
-          process.exit(1)
-        }
-        if (jars.length > 1) {
-          console.error(`Multiple JARs found in runtime/build/libs/: ${jars.join(', ')}. Expected exactly one.`)
-          process.exit(1)
-        }
-
-        const jarFilename = jars[0]
-        copyFileSync(join(libsDir, jarFilename), join(distDir, jarFilename))
-        inkManifest.runtime = {
-          jar: jarFilename,
-          entry: manifest.runtime.entry,
-        }
-        console.log(`Runtime jar copied to dist/${jarFilename}`)
-      } else {
-        // External JAR path — copy directly
-        const jarSource = join(this.projectDir, manifest.runtime.jar)
-        if (!existsSync(jarSource)) {
-          console.error(`Runtime jar not found: ${manifest.runtime.jar} — build it with Gradle first`)
-          process.exit(1)
-        }
-        const jarFilename = basename(manifest.runtime.jar)
-        copyFileSync(jarSource, join(distDir, jarFilename))
-        inkManifest.runtime = {
-          jar: jarFilename,
-          entry: manifest.runtime.entry,
-        }
-        console.log(`Runtime jar copied to dist/${jarFilename}`)
+      let gradleArgs = 'build';
+      if (isWindows && existsSync(wrapperBat)) {
+        gradleCmd = wrapperBat;
+      } else if (existsSync(wrapperSh)) {
+        gradleCmd = isWindows ? 'bash' : wrapperSh;
+        gradleArgs = isWindows ? `"${wrapperSh.replace(/\\/g, '/')}" build` : 'build';
       }
+
+      const runtimeDisplay = runtimeDir === legacyRuntimeDir ? 'runtime/' : `runtime/${targetName}/`;
+      console.log(`Running Gradle build in ${runtimeDisplay}...`);
+      try {
+        execSync(`"${gradleCmd}" ${gradleArgs}`, { cwd: runtimeDir, stdio: 'pipe' });
+      } catch (e: any) {
+        const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '');
+        console.error(`Gradle build failed:\n` + output);
+        process.exit(1);
+      }
+      console.log('Gradle build successful');
+
+      const libsDir = join(runtimeDir, 'build/libs');
+      const jars = readdirSync(libsDir).filter(f => f.endsWith('.jar'));
+      if (jars.length === 0) {
+        console.error(`No JAR found in ${runtimeDisplay}build/libs/`);
+        process.exit(1);
+      }
+
+      const jarFilename = jars[0];
+      copyFileSync(join(libsDir, jarFilename), join(distDir, jarFilename));
+      inkManifest.runtime = {
+        jar: jarFilename,
+        entry: targetConfig.entry,
+        target: targetName,
+      };
+      // Compute relative path: dist/ or dist/<target>/
+      const distRel = distDir.endsWith(`dist${sep}${targetName}`) ? `dist/${targetName}/` : 'dist/';
+      const jarDest = `${distRel}${jarFilename}`;
+      console.log(`Runtime jar copied to ${jarDest}`);
+    } else if (targetConfig?.jar) {
+      // External JAR path — copy directly
+      const jarSource = join(this.projectDir, targetConfig.jar);
+      if (!existsSync(jarSource)) {
+        console.error(`Runtime jar not found: ${targetConfig.jar} — build it with Gradle first`);
+        process.exit(1);
+      }
+      const jarFilename = basename(targetConfig.jar);
+      copyFileSync(jarSource, join(distDir, jarFilename));
+      inkManifest.runtime = {
+        jar: jarFilename,
+        entry: targetConfig.entry,
+        target: targetName,
+      };
+      const distRel = distDir.endsWith(`dist${sep}${targetName}`) ? `dist/${targetName}/` : 'dist/';
+      const jarDest = `${distRel}${jarFilename}`;
+      console.log(`Runtime jar copied to ${jarDest}`);
     }
 
-    // Compile .ink scripts
+    // Scripts compilation
     const scriptsDir = join(this.projectDir, 'scripts')
     if (existsSync(scriptsDir)) {
       const inkFiles = readdirSync(scriptsDir).filter(f => f.endsWith('.ink'))
@@ -114,10 +141,8 @@ export class InkBuildCommand {
           console.error('Ink compiler not found. Set INK_COMPILER or [build] compiler in ink-package.toml.')
           process.exit(1)
         }
-
         const outDir = join(distDir, 'scripts')
         mkdirSync(outDir, { recursive: true })
-
         const grammarIrPath = join(distDir, 'grammar.ir.json')
         const javaCmd = (process.env['INK_JAVA'] || 'java').replace(/\\/g, '/')
         const compilerPath = compiler.replace(/\\/g, '/')
@@ -134,17 +159,15 @@ export class InkBuildCommand {
           console.error('Ink compilation failed:\n' + output)
           process.exit(1)
         }
-
         const compiledFiles = readdirSync(outDir).filter(f => f.endsWith('.inkc'))
         inkManifest.scripts = compiledFiles
         console.log(`Compiled ${compiledFiles.length} script(s)`)
       }
     }
 
-    // Write ink-manifest.json
-    writeFileSync(join(distDir, 'ink-manifest.json'), JSON.stringify(inkManifest, null, 2))
-    console.log('Wrote dist/ink-manifest.json')
-    splash.build()
+    writeFileSync(join(distDir, 'ink-manifest.json'), JSON.stringify(inkManifest, null, 2));
+    const manifestRel = distDir.endsWith(`dist${sep}${targetName}`) ? `dist/${targetName}/` : 'dist/';
+    console.log(`Wrote ${manifestRel}ink-manifest.json`);
   }
 
   private async buildGrammar(packageName: string, grammarEntry: string, grammarOutput: string): Promise<void> {

@@ -8,30 +8,30 @@ export class RemoveCommand {
 
   async run(pkgName: string): Promise<void> {
     const inkPackageTomlPath = path.join(this.projectDir, 'ink-package.toml');
-    if (!fs.existsSync(inkPackageTomlPath)) {
-      console.log('No ink-package.toml found.');
-      return;
-    }
-
-    const manifest = TomlParser.read(inkPackageTomlPath);
-    if (!(pkgName in manifest.dependencies)) {
-      console.log(`${pkgName} is not in dependencies.`);
-      return;
-    }
-
     const pkgDir = path.join(this.projectDir, 'packages', pkgName.replace('/', '-'));
+
+    if (!fs.existsSync(pkgDir) && !fs.existsSync(inkPackageTomlPath)) {
+      console.log(`${pkgName} is not installed.`);
+      return;
+    }
+
     if (fs.existsSync(pkgDir)) {
       FileUtils.deleteDirectory(pkgDir);
     }
 
-    const updated = {
-      ...manifest,
-      dependencies: Object.fromEntries(
-        Object.entries(manifest.dependencies).filter(([k]) => k !== pkgName)
-      ),
-    };
-    fs.writeFileSync(inkPackageTomlPath, TomlParser.write(updated));
+    if (fs.existsSync(inkPackageTomlPath)) {
+      const manifest = TomlParser.read(inkPackageTomlPath);
+      if (pkgName in manifest.dependencies) {
+        const updated = {
+          ...manifest,
+          dependencies: Object.fromEntries(
+            Object.entries(manifest.dependencies).filter(([k]) => k !== pkgName)
+          ),
+        };
+        fs.writeFileSync(inkPackageTomlPath, TomlParser.write(updated));
+      }
+    }
 
-    console.log(`Removed ${pkgName} from dependencies.`);
+    console.log(`Removed ${pkgName}.`);
   }
 }
