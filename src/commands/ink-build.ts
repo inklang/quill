@@ -17,10 +17,11 @@ export class InkBuildCommand {
 
     // Resolve target
     const targetName = this.target ?? 'default';
+    const targets = manifest.targets ?? {};
 
     // Validate: if a specific target was requested, it must be declared
-    if (this.target !== undefined && !manifest.targets[targetName]) {
-      const available = Object.keys(manifest.targets);
+    if (this.target !== undefined && !targets[targetName]) {
+      const available = Object.keys(targets);
       const msg = available.length > 0
         ? `Target "${targetName}" not declared in ink-package.toml. Available: ${available.join(', ')}`
         : `No targets declared in ink-package.toml. Run 'quill new --target=paper,hytale' to scaffold.`;
@@ -28,7 +29,7 @@ export class InkBuildCommand {
       process.exit(1);
     }
 
-    const targetConfig = manifest.targets[targetName];
+    const targetConfig = targets[targetName];
 
     // Determine dist directory and whether to include target in output paths
     // For legacy projects (runtime at root, not runtime/<target>/), use dist/ root
@@ -152,7 +153,7 @@ export class InkBuildCommand {
         try {
           execSync(
             `"${javaCmd}" -jar "${compilerPath}" compile --grammar "${grammarIrPathFwd}" --sources "${scriptsDirFwd}" --out "${outDirFwd}"`,
-            { cwd: this.projectDir, stdio: 'pipe', shell: process.env['SHELL'] || true }
+            { cwd: this.projectDir, stdio: 'pipe' }
           )
         } catch (e: any) {
           const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '')

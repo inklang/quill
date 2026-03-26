@@ -8,6 +8,11 @@ export interface RuntimeConfig {
   entry: string;
 }
 
+export interface TargetConfig {
+  entry: string;
+  jar?: string;  // For legacy external JAR projects
+}
+
 export interface ServerConfig {
   paper?: string;
   jar?: string;
@@ -22,8 +27,9 @@ export interface PackageManifest {
   main: string;
   dependencies: Record<string, string>;
   grammar?: GrammarConfig;
-  runtime?: RuntimeConfig;
-  server?: ServerConfig;
+  runtime?: RuntimeConfig;  // Legacy
+  server?: ServerConfig;    // Server config
+  targets?: Record<string, TargetConfig>;  // Multi-target support
 }
 
 export function defaultManifest(name: string): PackageManifest {
@@ -32,5 +38,6 @@ export function defaultManifest(name: string): PackageManifest {
     version: '0.1.0',
     main: 'mod',
     dependencies: {},
+    targets: {},
   };
 }
