@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.3.7 — 2026-03-26
+
+### Fixed
+
+- Build uses full slug URL (owner/package) when publishing instead of just package name.
+
+## 0.3.6 — 2026-03-26
+
+### Fixed
+
+- Publish now sends all targets from `manifest.targets` table (not just `manifest.target` singular).
+
+## 0.3.5 — 2026-03-26
+
+### Fixed
+
+- Ink-build tests now use real `printing_press.exe` instead of mock script.
+- Target resolution falls back to `manifest.target` for legacy single-target projects.
+
+## 0.3.4 — 2026-03-26
+
+### Added
+
+- Publish sends `targets` field to registry so packages can declare runtime environment (e.g. "paper").
+
+## 0.3.3 — 2026-03-26
+
+### Added
+
+- Ink-build copies package runtime artifacts from target subfolders to `dist/`.
+
 ## 0.3.2 — 2026-03-24
 
 ### Fixed
