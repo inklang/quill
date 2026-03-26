@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "lastFullBuild": "2026-03-26T10:11:23.066Z",
+  "grammarIrHash": "3c0d64bef69fb1e507e062aa83c7ab7894d961a8c4d961cbe08c4ddaa8f3f2d1",
+  "entries": {
+    "scripts/main.ink": {
+      "hash": "15ee534538967171109513238ef2705b3076c1e0310a0d9d10bd8e19de9d0a11",
+      "output": "scripts/main.inkc",
+      "compiledAt": "2026-03-26T10:11:23.066Z"
+    }
+  }
+}

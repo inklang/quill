@@ -44,51 +44,30 @@ export class PublishCommand {
     const readmePath = join(this.projectDir, 'README.md')
     const readme = existsSync(readmePath) ? readFileSync(readmePath, 'utf-8') : undefined
 
-    const boundary = '----QuillPublishBoundary'
-    const parts: Buffer[] = []
-
-    // tarball part
-    parts.push(Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="tarball"; filename="package.tar.gz"\r\nContent-Type: application/gzip\r\n\r\n`
-    ))
-    parts.push(tarball)
-    parts.push(Buffer.from('\r\n'))
-
-    if (description) {
-      parts.push(Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="description"\r\n\r\n${description}\r\n`
-      ))
-    }
-
-    if (readme) {
-      parts.push(Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="readme"\r\n\r\n${readme}\r\n`
-      ))
-    }
-
     // Send all targets: explicit manifest.target + keys from manifest.targets table
     const targetsToSend = manifest.target
       ? [manifest.target, ...Object.keys(manifest.targets ?? {})]
-      : Object.keys(manifest.targets ?? []);
-    if (targetsToSend.length > 0) {
-      parts.push(Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="targets"\r\n\r\n${JSON.stringify([...new Set(targetsToSend)])}\r\n`
-      ))
-    }
-
-    parts.push(Buffer.from(`--${boundary}--\r\n`))
-    const body = Buffer.concat(parts)
+      : Object.keys(manifest.targets ?? {});
 
     const client = new RegistryClient()
-    const url = `${client.registryUrl}/api/packages/${manifest.name}/${manifest.version}`
+    // Build full slug from username and package name
+    const slug = `${rc.username}/${manifest.name}`
+    const url = `${client.registryUrl}/api/packages/${slug}/${manifest.version}`
+
+    // Use custom content-type to avoid Vercel blocking multipart/form-data PUTs
+    const headers: Record<string, string> = {
+      'Authorization': `Bearer ${rc.token}`,
+      'Content-Type': 'application/vnd.ink-publish+gzip',
+      'Content-Length': tarball.length.toString(),
+    }
+    if (description) headers['X-Package-Description'] = description
+    if (readme) headers['X-Package-Readme'] = readme
+    if (targetsToSend.length > 0) headers['X-Package-Targets'] = JSON.stringify([...new Set(targetsToSend)])
 
     const res = await fetch(url, {
       method: 'PUT',
-      headers: {
-        'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        'Authorization': `Bearer ${rc.token}`,
-      },
-      body,
+      headers,
+      body: tarball,
     })
 
     if (!res.ok) {
