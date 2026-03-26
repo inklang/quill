@@ -350,10 +350,12 @@ writeFileSync('${grammarOutputPath.replace(/\\/g, '\\\\')}', result);
 
     if (isPrintingPress) {
       try {
-        execSync(
+        const output = execSync(
           `"${compilerPath}" compile --sources "${scriptsDirFwd}" --out "${outDirFwd}"`,
           { cwd: this.projectDir, stdio: 'pipe' } as any
-        );
+        )?.toString() ?? '';
+        // printing_press outputs "Compiled X file(s)" on success
+        if (output) console.log(output.trim());
       } catch (e: any) {
         const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '');
         console.error('Ink compilation failed:\n' + output);

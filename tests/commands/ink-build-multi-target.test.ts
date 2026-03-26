@@ -8,7 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const CLI = join(__dirname, '../../src/cli.js')
 const FIXTURE = join(__dirname, '../fixtures/multi-target-project')
 
-const MOCK_COMPILER = join(__dirname, '../fixtures/scripts-compile-project/mock-printing_press.sh')
+const COMPILER = join(__dirname, '../../compiler/printing_press.exe')
 
 describe('ink build with target-specific packages', () => {
   beforeEach(() => {
@@ -21,7 +21,7 @@ describe('ink build with target-specific packages', () => {
     const result = execSync(`npx tsx ${CLI} build`, {
       cwd: FIXTURE,
       encoding: 'utf8',
-      env: { ...process.env, INK_COMPILER: MOCK_COMPILER },
+      env: { ...process.env, INK_COMPILER: COMPILER },
     })
 
     // Project ink-manifest.json should have target = "paper"
@@ -51,7 +51,7 @@ describe('ink build with target-specific packages', () => {
     rmSync(paperDir, { recursive: true })
 
     try {
-      execSync(`npx tsx ${CLI} build`, { cwd: FIXTURE, encoding: 'utf8', stdio: 'pipe', env: { ...process.env, INK_COMPILER: MOCK_COMPILER } })
+      execSync(`npx tsx ${CLI} build`, { cwd: FIXTURE, encoding: 'utf8', stdio: 'pipe', env: { ...process.env, INK_COMPILER: COMPILER } })
       expect.unreachable('should have thrown')
     } catch (e: any) {
       expect(e.stderr.toString()).toContain('has no variant for target "paper"')

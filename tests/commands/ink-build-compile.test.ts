@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const CLI = join(__dirname, '../../src/cli.js')
 const FIXTURE = join(__dirname, '../fixtures/scripts-compile-project')
-const MOCK_COMPILER = join(FIXTURE, 'mock-printing_press.sh')
+const COMPILER = join(__dirname, '../../compiler/printing_press.exe')
 
 describe('ink build .ink compilation', () => {
   beforeEach(() => {
@@ -19,9 +19,9 @@ describe('ink build .ink compilation', () => {
   it('compiles .ink files to .inkc in dist/scripts/', () => {
     const result = execSync(
       `npx tsx ${CLI} build`,
-      { cwd: FIXTURE, encoding: 'utf8', env: { ...process.env, INK_COMPILER: MOCK_COMPILER } }
+      { cwd: FIXTURE, encoding: 'utf8', env: { ...process.env, INK_COMPILER: COMPILER } }
     )
-    expect(result).toContain('Compiled 1 script')
+    expect(result).toContain('Compiled 1 script(s)')
 
     expect(existsSync(join(FIXTURE, 'dist/scripts/main.inkc'))).toBe(true)
 
@@ -53,14 +53,14 @@ describe('ink build .ink compilation', () => {
     execSync(`npx tsx ${CLI} build`, {
       cwd: FIXTURE,
       encoding: 'utf8',
-      env: { ...process.env, INK_COMPILER: MOCK_COMPILER },
+      env: { ...process.env, INK_COMPILER: COMPILER },
     })
 
     // Second build should be incremental (no recompilation)
     const result2 = execSync(`npx tsx ${CLI} build`, {
       cwd: FIXTURE,
       encoding: 'utf8',
-      env: { ...process.env, INK_COMPILER: MOCK_COMPILER },
+      env: { ...process.env, INK_COMPILER: COMPILER },
     })
     expect(result2.toString()).toContain('All scripts up to date')
   })
@@ -70,14 +70,14 @@ describe('ink build .ink compilation', () => {
     execSync(`npx tsx ${CLI} build`, {
       cwd: FIXTURE,
       encoding: 'utf8',
-      env: { ...process.env, INK_COMPILER: MOCK_COMPILER },
+      env: { ...process.env, INK_COMPILER: COMPILER },
     })
 
     // --full should recompile
     const result = execSync(`npx tsx ${CLI} build --full`, {
       cwd: FIXTURE,
       encoding: 'utf8',
-      env: { ...process.env, INK_COMPILER: MOCK_COMPILER },
+      env: { ...process.env, INK_COMPILER: COMPILER },
     })
     expect(result.toString()).toContain('Compiled')
   })
@@ -87,7 +87,7 @@ describe('ink build .ink compilation', () => {
     execSync(`npx tsx ${CLI} build`, {
       cwd: FIXTURE,
       encoding: 'utf8',
-      env: { ...process.env, INK_COMPILER: MOCK_COMPILER },
+      env: { ...process.env, INK_COMPILER: COMPILER },
     })
 
     const result = execSync(`npx tsx ${CLI} cache`, {
@@ -103,7 +103,7 @@ describe('ink build .ink compilation', () => {
     execSync(`npx tsx ${CLI} build`, {
       cwd: FIXTURE,
       encoding: 'utf8',
-      env: { ...process.env, INK_COMPILER: MOCK_COMPILER },
+      env: { ...process.env, INK_COMPILER: COMPILER },
     })
 
     const result = execSync(`npx tsx ${CLI} cache clean`, {
