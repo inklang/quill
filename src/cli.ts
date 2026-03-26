@@ -20,9 +20,20 @@ import { DoctorCommand } from './commands/doctor.js'
 import { OutdatedCommand } from './commands/outdated.js'
 import { UnpublishCommand } from './commands/unpublish.js'
 import { CompletionsCommand } from './commands/completions.js'
-import { CacheCommand, CacheCleanCommand } from './cache/commands.js'
-import { existsSync } from 'fs'
+import { CacheCommand, CacheCleanCommand, CacheLsCommand } from './cache/commands.js'
+import { WhyCommand } from './commands/why.js'
+import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
+
+// Read version from package.json at runtime so --version is always accurate
+function getVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf-8'))
+    return pkg.version ?? '0.0.0'
+  } catch {
+    return '0.0.0'
+  }
+}
 
 const program = new Command();
 const projectDir = process.cwd();
@@ -38,7 +49,7 @@ function requireProject(): void {
 program
   .name('quill')
   .description('Package manager for the Ink programming language')
-  .version('0.3.7');
+  .version(getVersion());
 
 program
   .command('new <name>')
@@ -121,6 +132,15 @@ cacheInfoCmd
   .action(async () => {
     requireProject()
     new CacheCleanCommand(projectDir).run()
+  })
+
+// cache ls as subcommand of cache-info
+cacheInfoCmd
+  .command('ls')
+  .description('List cached package tarballs')
+  .action(async () => {
+    requireProject()
+    new CacheLsCommand(projectDir).run()
   })
 
 program
@@ -206,9 +226,18 @@ program
 program
   .command('outdated')
   .description('Check for packages with newer versions available')
-  .action(async () => {
+  .option('--json', 'Output JSON')
+  .action(async (opts) => {
     requireProject()
-    await new OutdatedCommand(projectDir).run()
+    await new OutdatedCommand(projectDir).run(!!opts.json)
+  })
+
+program
+  .command('why <pkg>')
+  .description('Show why a package is installed (direct dep, transitive, etc.)')
+  .action(async (pkg: string) => {
+    requireProject()
+    await new WhyCommand(projectDir).run(pkg)
   })
 
 program
@@ -228,7 +257,7 @@ program
 
 const COMMAND_GROUPS = [
   { title: 'Project',      names: ['new', 'init'] },
-  { title: 'Dependencies', names: ['add', 'remove', 'install', 'update', 'outdated', 'ls', 'clean'] },
+  { title: 'Dependencies', names: ['add', 'remove', 'install', 'update', 'outdated', 'why', 'ls', 'clean'] },
   { title: 'Build',        names: ['build', 'check', 'watch', 'run'] },
   { title: 'Cache',        names: ['cache'] },
   { title: 'Registry',     names: ['login', 'logout', 'publish', 'unpublish', 'search', 'info'] },

@@ -5,10 +5,17 @@ import { Semver } from '../model/semver.js'
 import path from 'path'
 import fs from 'fs'
 
+export interface OutdatedEntry {
+  name: string
+  current: string
+  latest: string
+  target?: string
+}
+
 export class OutdatedCommand {
   constructor(private projectDir: string) {}
 
-  async run(): Promise<void> {
+  async run(outputJson: boolean = false): Promise<void> {
     const inkPackageTomlPath = path.join(this.projectDir, 'ink-package.toml')
     if (!fs.existsSync(inkPackageTomlPath)) {
       console.error('No ink-package.toml found. Run `quill init` or `quill new` first.')
@@ -19,26 +26,19 @@ export class OutdatedCommand {
     const deps: Record<string, string> = manifest.dependencies ?? {}
 
     if (Object.keys(deps).length === 0) {
-      console.log('No dependencies to check.')
+      if (outputJson) {
+        console.log(JSON.stringify({ outdated: [], total: 0 }))
+      } else {
+        console.log('No dependencies to check.')
+      }
       return
-    }
-
-    const lockfilePath = path.join(this.projectDir, 'quill.lock')
-    let lockfile: Map<string, { version: string }> = new Map()
-    if (fs.existsSync(lockfilePath)) {
-      try {
-        const lf = Lockfile.read(lockfilePath)
-        for (const [key, entry] of Object.entries(lf.packages)) {
-          lockfile.set(key, { version: entry.version })
-        }
-      } catch {}
     }
 
     const client = new RegistryClient()
     const index = await client.fetchIndex()
     const packagesDir = path.join(this.projectDir, 'packages')
 
-    const outdated: { name: string, current: string, latest: string, target: string | undefined }[] = []
+    const outdated: OutdatedEntry[] = []
 
     for (const [depName, depRange] of Object.entries(deps)) {
       const pkgDir = path.join(packagesDir, depName.replace('/', '-'))
@@ -65,6 +65,11 @@ export class OutdatedCommand {
           }
         } catch {}
       }
+    }
+
+    if (outputJson) {
+      console.log(JSON.stringify({ outdated, total: outdated.length }))
+      return
     }
 
     if (outdated.length === 0) {

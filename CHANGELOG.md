@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.9 — 2026-03-26
+
+### Added
+
+- `quill why <pkg>` — shows why a package is installed (version, specifier, transitive deps).
+- `quill outdated --json` — outputs outdated packages as JSON for scripting.
+- `quill cache-info ls` — lists cached package tarballs.
+- `homepage` and `repository` fields in `ink-package.toml` (read and written).
+
+### Changed
+
+- `quill --version` now reads the version from `package.json` at runtime instead of being hardcoded.
+
 ## 0.3.8 — 2026-03-26
 
 ### Added

@@ -2,6 +2,33 @@ import { CacheManifestStore } from './manifest.js'
 import { readdirSync, statSync, rmSync, existsSync } from 'fs'
 import { join } from 'path'
 
+export class CacheLsCommand {
+  constructor(private projectDir: string) {}
+
+  run(): void {
+    const cacheDir = join(this.projectDir, '.quill-cache')
+    if (!existsSync(cacheDir)) {
+      console.log('No cache entries (./.quill-cache/ is empty or missing).')
+      return
+    }
+
+    const files = readdirSync(cacheDir).filter(f => f.endsWith('.tar.gz') || f.endsWith('.json') || !f.startsWith('extract-'))
+    const tarballs = readdirSync(cacheDir).filter(f => f.endsWith('.tar.gz'))
+
+    if (tarballs.length === 0) {
+      console.log('No cached tarballs.')
+      return
+    }
+
+    console.log(`Cached tarballs (${tarballs.length}):`)
+    for (const f of tarballs) {
+      const stat = statSync(join(cacheDir, f))
+      const kb = Math.round(stat.size / 1024)
+      console.log(`  ${f}  ${kb} KB`)
+    }
+  }
+}
+
 export class CacheCommand {
   constructor(private projectDir: string) {}
 

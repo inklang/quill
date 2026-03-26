@@ -38,6 +38,8 @@ quill remove <package>        # remove a package (alias: uninstall)
 quill install                 # install all dependencies from ink-package.toml
 quill update [packages...]    # update dependencies to latest matching versions
 quill outdated                # check for packages with newer versions
+quill outdated --json         # output outdated packages as JSON
+quill why <package>          # show why a package is installed
 quill ls                      # list installed packages
 quill clean                   # remove the .quill-cache/ directory
 ```
@@ -69,6 +71,7 @@ quill info <pkg>              # show details about a package
 
 ```bash
 quill cache-info              # show build cache info
+quill cache-info ls           # list cached package tarballs
 quill cache-info clean        # remove build cache
 ```
 

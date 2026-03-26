@@ -24,6 +24,8 @@ export interface PackageManifest {
   version: string;
   description?: string;
   author?: string;
+  homepage?: string;
+  repository?: string;
   main: string;
   dependencies: Record<string, string>;
   target?: string;
