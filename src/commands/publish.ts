@@ -66,6 +66,12 @@ export class PublishCommand {
       ))
     }
 
+    if (manifest.target) {
+      parts.push(Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="targets"\r\n\r\n${JSON.stringify([manifest.target])}\r\n`
+      ))
+    }
+
     parts.push(Buffer.from(`--${boundary}--\r\n`))
     const body = Buffer.concat(parts)
 
