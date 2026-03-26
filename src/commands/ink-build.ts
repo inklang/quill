@@ -17,8 +17,8 @@ export class InkBuildCommand {
   async run(opts: { full?: boolean } = {}): Promise<void> {
     const manifest = TomlParser.read(join(this.projectDir, 'ink-package.toml'))
 
-    // Resolve target
-    const targetName = this.target ?? 'default';
+    // Resolve target — use explicit target, then legacy manifest.target, then default
+    const targetName = this.target ?? manifest.target ?? 'default';
     const targets = manifest.targets ?? {};
 
     // Validate: if a specific target was requested, it must be declared
@@ -343,7 +343,7 @@ writeFileSync('${grammarOutputPath.replace(/\\/g, '\\\\')}', result);
     outDir: string,
     distDir: string
   ): void {
-    const isPrintingPress = compiler.endsWith('printing_press') || compiler.endsWith('printing_press.exe');
+    const isPrintingPress = compiler.includes('printing_press') || compiler.includes('printing_press.exe');
     const compilerPath = compiler.replace(/\\/g, '/');
     const scriptsDirFwd = scriptsDir.replace(/\\/g, '/');
     const outDirFwd = outDir.replace(/\\/g, '/');
@@ -385,7 +385,7 @@ writeFileSync('${grammarOutputPath.replace(/\\/g, '\\\\')}', result);
     scriptsDir: string,
     outDir: string
   ): number {
-    const isPrintingPress = compiler.endsWith('printing_press') || compiler.endsWith('printing_press.exe');
+    const isPrintingPress = compiler.includes('printing_press') || compiler.includes('printing_press.exe');
     const compilerPath = compiler.replace(/\\/g, '/');
     let compiled = 0;
 
