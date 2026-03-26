@@ -123,3 +123,61 @@ main = "main"
     fs.unlinkSync(filePath);
   });
 });
+
+describe('TomlParser with target', () => {
+  const tmpDir = os.tmpdir();
+
+  it('parses target from [package] section', () => {
+    const content = `
+[package]
+name = "my-plugin"
+version = "1.0.0"
+target = "paper"
+
+[grammar]
+entry = "src/grammar.ts"
+output = "dist/grammar.ir.json"
+`;
+    const filePath = path.join(tmpDir, 'quill-target-test-' + Date.now() + '.toml');
+    fs.writeFileSync(filePath, content);
+
+    const manifest = TomlParser.read(filePath);
+    expect(manifest.target).toBe('paper');
+
+    fs.unlinkSync(filePath);
+  });
+
+  it('target is undefined when not specified', () => {
+    const content = `
+[package]
+name = "my-plugin"
+version = "1.0.0"
+`;
+    const filePath = path.join(tmpDir, 'quill-no-target-test-' + Date.now() + '.toml');
+    fs.writeFileSync(filePath, content);
+
+    const manifest = TomlParser.read(filePath);
+    expect(manifest.target).toBeUndefined();
+
+    fs.unlinkSync(filePath);
+  });
+
+  it('writes target when present', () => {
+    const manifest = {
+      name: 'test-pkg',
+      version: '0.2.0',
+      main: 'main',
+      target: 'paper',
+      dependencies: {},
+    };
+    const filePath = path.join(tmpDir, 'quill-write-target-test-' + Date.now() + '.toml');
+
+    const tomlString = TomlParser.write(manifest);
+    fs.writeFileSync(filePath, tomlString);
+
+    const written = fs.readFileSync(filePath, 'utf-8');
+    expect(written).toContain('target = "paper"');
+
+    fs.unlinkSync(filePath);
+  });
+});
