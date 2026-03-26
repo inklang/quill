@@ -35,6 +35,7 @@ export interface PackageInfo {
   description: string;
   dependencies: Record<string, string>;
   homepage?: string;
+  targets?: string[];
 }
 
 export class RegistryClient {
@@ -201,6 +202,7 @@ export class RegistryClient {
       description: pkgVer.description ?? '',
       dependencies: pkgVer.dependencies,
       homepage: pkgVer.homepage,
+      targets: pkgVer.targets,
     };
   }
 }

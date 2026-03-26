@@ -1,13 +1,16 @@
 import { readRc } from '../util/keys.js'
 import { RegistryClient } from '../registry/client.js'
 import { TomlParser } from '../util/toml.js'
+import { Lockfile } from '../lockfile.js'
 import path from 'path'
+import fs from 'fs'
 
 export class UnpublishCommand {
   constructor(private projectDir: string) {}
 
   async run(version?: string): Promise<void> {
-    const manifest = TomlParser.read(path.join(this.projectDir, 'ink-package.toml'))
+    const inkPackageTomlPath = path.join(this.projectDir, 'ink-package.toml')
+    const manifest = TomlParser.read(inkPackageTomlPath)
 
     if (!manifest.name) {
       console.error('ink-package.toml must have a name.')
@@ -44,5 +47,21 @@ export class UnpublishCommand {
     }
 
     console.log(`Unpublished ${manifest.name}@${targetVersion}.`)
+
+    // Remove from lockfile if present
+    const lockfilePath = path.join(this.projectDir, 'quill.lock')
+    if (fs.existsSync(lockfilePath)) {
+      try {
+        const lockfile = Lockfile.read(lockfilePath)
+        const pkgKey = `${rc.username}/${manifest.name}`
+        if (pkgKey in lockfile.packages) {
+          delete lockfile.packages[pkgKey]
+          lockfile.write(lockfilePath)
+          console.log(`Removed ${pkgKey} from quill.lock.`)
+        }
+      } catch {
+        // Lockfile update is best-effort
+      }
+    }
   }
 }

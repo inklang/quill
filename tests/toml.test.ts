@@ -17,7 +17,7 @@ entry = "mod"
 [dependencies]
 ink-core = "^1.0.0"
 `;
-    const filePath = path.join(tmpDir, 'quill-test-' + Date.now() + '.toml');
+    const filePath = path.join(tmpDir, 'quill-test-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.toml');
     fs.writeFileSync(filePath, content);
 
     const manifest = TomlParser.read(filePath);
@@ -36,7 +36,7 @@ ink-core = "^1.0.0"
       main: 'main',
       dependencies: { 'ink-core': '^1.0.0' },
     };
-    const filePath = path.join(tmpDir, 'quill-write-test-' + Date.now() + '.toml');
+    const filePath = path.join(tmpDir, 'quill-write-test-' + Date.now() + '-' + Math.random().toString(36).slice(2) + '.toml');
     fs.writeFileSync(filePath, TomlParser.write(manifest));
 
     const written = fs.readFileSync(filePath, 'utf-8');

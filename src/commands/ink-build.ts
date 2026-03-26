@@ -15,7 +15,10 @@ export class InkBuildCommand {
   constructor(private projectDir: string, private target?: string) {}
 
   async run(opts: { full?: boolean } = {}): Promise<void> {
-    const manifest = TomlParser.read(join(this.projectDir, 'ink-package.toml'))
+    const manifest = TomlParser.read(join(this.projectDir, 'ink-package.toml'));
+
+    // Tracks the runtime JAR hash for cache invalidation
+    let currentRuntimeJarHash: string | null = null;
 
     // Resolve target — use explicit target, then legacy manifest.target, then default
     const targetName = this.target ?? manifest.target ?? 'default';
@@ -115,6 +118,7 @@ export class InkBuildCommand {
       };
       const distRel = distDir.endsWith(`dist${sep}${targetName}`) ? `dist/${targetName}/` : 'dist/';
       console.log(`Runtime jar copied to ${distRel}${jarFilename}`);
+      currentRuntimeJarHash = hashFile(join(distDir, jarFilename));
     } else if (targetConfig?.jar) {
       // External JAR path — copy directly
       const jarSource = join(this.projectDir, targetConfig.jar);
@@ -131,6 +135,7 @@ export class InkBuildCommand {
       };
       const distRel = distDir.endsWith(`dist${sep}${targetName}`) ? `dist/${targetName}/` : 'dist/';
       console.log(`Runtime jar copied to ${distRel}${jarFilename}`);
+      currentRuntimeJarHash = hashFile(join(distDir, jarFilename));
     }
 
     // Copy artifacts from installed packages matching project target
@@ -173,6 +178,7 @@ export class InkBuildCommand {
             version: 1 as const,
             lastFullBuild: new Date().toISOString(),
             grammarIrHash: grammarHash,
+            runtimeJarHash: currentRuntimeJarHash,
             entries,
           };
           const cacheStore = new CacheManifestStore(join(this.projectDir, '.quill', 'cache'));
@@ -182,15 +188,19 @@ export class InkBuildCommand {
           const cacheStore = new CacheManifestStore(join(this.projectDir, '.quill', 'cache'));
           const cachedManifest = cacheStore.read();
 
-          // Grammar IR change invalidates all scripts
+          // Grammar IR or runtime JAR change invalidates all scripts
           const currentGrammarHash = hashGrammarIr(distDir);
           const grammarChanged = cachedManifest && cachedManifest.grammarIrHash !== currentGrammarHash;
+          const runtimeJarChanged = cachedManifest && cachedManifest.runtimeJarHash !== currentRuntimeJarHash;
 
           if (grammarChanged) {
             console.log('Grammar IR changed — invalidating script cache');
           }
+          if (runtimeJarChanged) {
+            console.log('Runtime JAR changed — invalidating script cache');
+          }
 
-          const dirtyFiles = grammarChanged
+          const dirtyFiles = (grammarChanged || runtimeJarChanged)
             ? inkFiles.map(f => ({
                 relativePath: `scripts/${f}`.replace(/\\/g, '/'),
                 hash: hashFile(join(scriptsDir, f)),
@@ -225,6 +235,7 @@ export class InkBuildCommand {
               version: 1 as const,
               lastFullBuild: cachedManifest?.lastFullBuild ?? new Date().toISOString(),
               grammarIrHash: currentGrammarHash,
+              runtimeJarHash: currentRuntimeJarHash,
               entries: allEntries,
             };
             cacheStore.write(newManifest);

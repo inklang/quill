@@ -11,6 +11,7 @@ export interface CacheManifest {
   version: 1
   lastFullBuild: string
   grammarIrHash: string | null
+  runtimeJarHash: string | null
   entries: Record<string, CacheEntry>
 }
 

@@ -1,53 +1,70 @@
-import { TomlParser } from '../util/toml.js'
-import { RegistryClient } from '../registry/client.js'
-import path from 'path'
-import fs from 'fs'
+import { TomlParser } from '../util/toml.js';
+import path from 'path';
+import fs from 'fs';
+
+interface DepNode {
+  name: string;
+  version: string;
+  specifiedAs: string;
+  children: DepNode[];
+}
 
 export class WhyCommand {
   constructor(private projectDir: string) {}
 
   async run(pkgName: string): Promise<void> {
-    const inkPackageTomlPath = path.join(this.projectDir, 'ink-package.toml')
+    const inkPackageTomlPath = path.join(this.projectDir, 'ink-package.toml');
     if (!fs.existsSync(inkPackageTomlPath)) {
-      console.error('No ink-package.toml found. Run `quill init` or `quill new` first.')
-      process.exit(1)
+      console.error('No ink-package.toml found. Run `quill init` or `quill new` first.');
+      process.exit(1);
     }
 
-    const manifest = TomlParser.read(inkPackageTomlPath)
-    const deps: Record<string, string> = manifest.dependencies ?? {}
+    const manifest = TomlParser.read(inkPackageTomlPath);
+    const deps: Record<string, string> = manifest.dependencies ?? {};
 
     if (!(pkgName in deps)) {
-      console.log(`${pkgName} is not a direct dependency of ${manifest.name}.`)
-      return
+      console.log(`${pkgName} is not a direct dependency of ${manifest.name}.`);
+      return;
     }
 
-    const pkgDir = path.join(this.projectDir, 'packages', pkgName.replace('/', '-'))
-    const installedManifest = path.join(pkgDir, 'ink-package.toml')
+    const tree = this.buildDepTree(pkgName, deps[pkgName], new Set<string>());
+    this.printTree(tree, '', true);
+  }
+
+  private buildDepTree(pkgName: string, specifiedAs: string, visited: Set<string>): DepNode {
+    const pkgDir = path.join(this.projectDir, 'packages', pkgName.replace('/', '-'));
+    const installedManifest = path.join(pkgDir, 'ink-package.toml');
 
     if (!fs.existsSync(installedManifest)) {
-      console.log(`${pkgName} is listed in dependencies but is not installed.`)
-      console.log(`  Specified as: ${deps[pkgName]}`)
-      return
+      return { name: pkgName, version: specifiedAs, specifiedAs, children: [] };
     }
 
-    const pkgMeta = TomlParser.read(installedManifest)
-    const version = pkgMeta.version ?? deps[pkgName]
+    const pkgMeta = TomlParser.read(installedManifest);
+    const version = pkgMeta.version ?? specifiedAs;
 
-    console.log(`${pkgName}@${version}`)
-    console.log(`  Specified as: ${deps[pkgName]}`)
-    if (pkgMeta.description) {
-      console.log(`  Description: ${pkgMeta.description}`)
+    const node: DepNode = { name: pkgName, version, specifiedAs, children: [] };
+
+    if (visited.has(pkgName)) {
+      return node;
     }
-    if (pkgMeta.author) {
-      console.log(`  Author: ${pkgMeta.author}`)
+    visited.add(pkgName);
+
+    const transitive: Record<string, string> = pkgMeta.dependencies ?? {};
+    for (const [dep, range] of Object.entries(transitive)) {
+      node.children.push(this.buildDepTree(dep, range, visited));
     }
 
-    // Show transitive deps if any
-    if (pkgMeta.dependencies && Object.keys(pkgMeta.dependencies).length > 0) {
-      console.log(`  Dependencies:`)
-      for (const [dep, range] of Object.entries(pkgMeta.dependencies)) {
-        console.log(`    ${dep} ${range}`)
-      }
+    return node;
+  }
+
+  private printTree(node: DepNode, indent: string, isLast: boolean): void {
+    const prefix = isLast ? '└── ' : '├── ';
+    const self = `${node.name}@${node.version}  (${node.specifiedAs})`;
+    console.log(`${indent}${prefix}${self}`);
+
+    const childIndent = indent + (isLast ? '    ' : '│   ');
+    for (let i = 0; i < node.children.length; i++) {
+      this.printTree(node.children[i], childIndent, i === node.children.length - 1);
     }
   }
 }

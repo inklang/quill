@@ -95,9 +95,9 @@ program
     await new UpdateCommand(projectDir).run(packages)
   });
 
-program.command('ls').description('List installed packages').action(async () => {
+program.command('ls').description('List installed packages').option('--json', 'Output JSON').action(async (opts) => {
   requireProject()
-  await new LsCommand(projectDir).run();
+  await new LsCommand(projectDir).run(!!opts.json);
 });
 
 program.command('clean').description('Remove .quill-cache/').action(async () => {

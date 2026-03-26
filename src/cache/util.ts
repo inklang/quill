@@ -45,6 +45,7 @@ export function findDirtyFiles(
 export function buildManifest(
   lastFullBuild: string,
   grammarIrHash: string | null,
+  runtimeJarHash: string | null,
   dirtyFiles: DirtyFile[]
 ): CacheManifest {
   const entries: Record<string, CacheEntry> = {}
@@ -56,5 +57,5 @@ export function buildManifest(
       compiledAt: new Date().toISOString(),
     }
   }
-  return { version: 1, lastFullBuild, grammarIrHash, entries }
+  return { version: 1, lastFullBuild, grammarIrHash, runtimeJarHash, entries }
 }

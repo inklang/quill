@@ -26,6 +26,7 @@ export class InfoCommand {
         console.log(`  Dependencies: ${deps}`)
       }
       if (info.homepage) console.log(`  Homepage: ${info.homepage}`)
+      if (info.targets && info.targets.length > 0) console.log(`  Targets: ${info.targets.join(', ')}`)
     } catch (e: any) {
       console.error(`error: Failed to fetch package info: ${e.message}`)
       process.exit(1)

@@ -83,7 +83,7 @@ describe('findDirtyFiles', () => {
 describe('buildManifest', () => {
   it('builds a valid manifest', () => {
     const dirtyFiles = [{ relativePath: 'scripts/hello.ink', hash: 'abc123' }]
-    const manifest = buildManifest('2026-03-25T12:00:00Z', 'grammarhash', dirtyFiles)
+    const manifest = buildManifest('2026-03-25T12:00:00Z', 'grammarhash', null, dirtyFiles)
     expect(manifest.version).toBe(1)
     expect(manifest.entries['scripts/hello.ink'].hash).toBe('abc123')
     expect(manifest.entries['scripts/hello.ink'].output).toBe('scripts/hello.inkc')
