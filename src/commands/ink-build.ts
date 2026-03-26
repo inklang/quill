@@ -23,6 +23,7 @@ export class InkBuildCommand {
     const inkManifest: Record<string, unknown> = {
       name: manifest.name,
       version: manifest.version,
+      target: manifest.target,
     }
 
     // Grammar compilation
