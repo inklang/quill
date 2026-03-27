@@ -1,5 +1,6 @@
 import { Semver } from '../model/semver.js';
 import { SemverRange } from '../model/semver.js';
+import { readRc } from '../util/keys.js';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -49,14 +50,8 @@ export class RegistryClient {
     const envToken = process.env['QUILL_TOKEN']
     if (envToken) return envToken
 
-    const rcPath = path.join(os.homedir(), '.quillrc')
-    if (fs.existsSync(rcPath)) {
-      const content = fs.readFileSync(rcPath, 'utf8').trim()
-      const match = content.match(/^token\s*=\s*(.+)$/m)
-      if (match) return match[1].trim()
-    }
-
-    return null
+    const rc = readRc()
+    return rc?.token ?? null
   }
 
   async fetchIndex(): Promise<object> {

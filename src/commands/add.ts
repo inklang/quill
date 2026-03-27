@@ -4,16 +4,26 @@ import { FileUtils } from '../util/fs.js';
 import { Lockfile, LockfileEntry } from '../lockfile.js';
 import { VulnerabilitiesScanner } from '../audit/vulnerabilities.js';
 import { ChecksumVerifier } from '../audit/checksum.js';
+import { Spinner } from '../ui/spinner.js';
+import { cli } from '../ui/colors.js';
 import path from 'path';
 import fs from 'fs';
 import { createReadStream } from 'fs';
 import { createHash } from 'crypto';
 import readline from 'readline';
 
+export interface AddOptions {
+  force?: boolean
+  yes?: boolean
+  saveExact?: boolean
+  dryRun?: boolean
+  verbose?: boolean
+}
+
 export class AddCommand {
   constructor(private projectDir: string) {}
 
-  async run(pkgSpec: string, opts: { force?: boolean } = {}): Promise<void> {
+  async run(pkgSpec: string, opts: AddOptions = {}): Promise<void> {
     const [pkgName, version] = pkgSpec.includes('@')
       ? pkgSpec.split('@')
       : [pkgSpec, null];
@@ -31,11 +41,26 @@ export class AddCommand {
     }
 
     const client = new RegistryClient();
+    const spinner = new Spinner();
+
+    spinner.start('Fetching registry index...');
     const index = await client.fetchIndex();
+    spinner.succeed('Registry index fetched.');
+
     const pkgVersion = client.findBestMatch(index, pkgName, rangeStr);
 
     if (!pkgVersion) {
       console.log(`No version of ${pkgName} satisfies ${version ?? 'any version'}`);
+      return;
+    }
+
+    // Dry run — show what would happen and exit
+    if (opts.dryRun) {
+      console.log(`[dry-run] Would install ${pkgName}@${pkgVersion.version}`);
+      if (opts.verbose) {
+        console.log(`  URL: ${pkgVersion.url}`);
+        if (pkgVersion.checksum) console.log(`  Checksum: ${pkgVersion.checksum}`);
+      }
       return;
     }
 
@@ -56,31 +81,38 @@ export class AddCommand {
     }
 
     console.log(`Installing ${pkgName} v${pkgVersion.version}...`);
+    if (opts.verbose) console.log(`  URL: ${pkgVersion.url}`);
 
     const cacheDir = path.join(this.projectDir, '.quill-cache');
     FileUtils.ensureDir(cacheDir);
     const tarball = path.join(cacheDir, `${pkgName.replace('/', '-')}-${pkgVersion.version}.tar.gz`);
 
+    spinner.start(`Downloading ${pkgName}@${pkgVersion.version}...`);
     await FileUtils.downloadFile(pkgVersion.url, tarball);
+    spinner.succeed(`Downloaded ${pkgName}@${pkgVersion.version}.`);
 
-    // NEW: Compute checksum and verify
+    // Compute checksum and verify
+    spinner.start('Verifying checksum...');
     const computedChecksum = await this.computeTarballSha256(tarball)
+    if (opts.verbose) console.log(`  Computed: ${computedChecksum}`);
     if (pkgVersion.checksum) {
+      if (opts.verbose) console.log(`  Expected: ${pkgVersion.checksum}`);
       const verifier = new ChecksumVerifier()
       const result = await verifier.verify(tarball, pkgVersion.checksum)
       if (!result.valid) {
-        console.error(`CHECKSUM MISMATCH for ${pkgName}@${pkgVersion.version}:`)
-        console.error(`  Expected (registry): ${pkgVersion.checksum}`)
-        console.error(`  Computed:            ${computedChecksum}`)
-        console.error('  Package may have been tampered with. DO NOT INSTALL.')
+        spinner.fail(`Checksum mismatch for ${pkgName}@${pkgVersion.version}`);
+        console.error(`  Expected (registry): ${pkgVersion.checksum}`);
+        console.error(`  Computed:            ${computedChecksum}`);
+        console.error('  Package may have been tampered with. DO NOT INSTALL.');
         fs.rmSync(tarball, { force: true })
         process.exit(2)
       }
     }
+    spinner.succeed('Checksum verified.');
 
-    // NEW: Vulnerability audit
+    // Vulnerability audit
     if (!opts.force) {
-      const auditResult = await this.runVulnerabilityAudit(pkgName, pkgVersion.version, pkgVersion.dependencies)
+      const auditResult = await this.runVulnerabilityAudit(pkgName, pkgVersion.version, pkgVersion.dependencies, opts)
       if (auditResult.blocked) {
         console.error('Aborted.')
         fs.rmSync(tarball, { force: true })
@@ -90,6 +122,7 @@ export class AddCommand {
 
     // Extract only the matching target subfolder
     const extractDir = path.join(cacheDir, `extract-${pkgName.replace('/', '-')}-${pkgVersion.version}`);
+    spinner.start('Extracting package...');
     await FileUtils.extractTarGz(tarball, extractDir);
 
     let targetDir: string | null = null;
@@ -109,7 +142,7 @@ export class AddCommand {
       }
 
       if (!targetDir) {
-        console.error(`Error: Could not find variant for target "${projectTarget}" in package tarball.`);
+        spinner.fail(`Could not find variant for target "${projectTarget}" in package tarball.`);
         fs.rmSync(extractDir, { recursive: true, force: true });
         return;
       }
@@ -122,7 +155,6 @@ export class AddCommand {
         const destFile = path.join(pkgDir, file);
         if (fs.statSync(srcFile).isDirectory()) {
           FileUtils.ensureDir(destFile);
-          // Use fs.cpSync for recursive directory copy (Node 16+)
           fs.cpSync(srcFile, destFile, { recursive: true });
         } else {
           fs.copyFileSync(srcFile, destFile);
@@ -136,7 +168,8 @@ export class AddCommand {
     }
 
     // Update ink-package.toml
-    const updated = { ...manifest, dependencies: { ...manifest.dependencies, [pkgName]: `^${pkgVersion.version}` } };
+    const versionStr = opts.saveExact ? pkgVersion.version : `^${pkgVersion.version}`;
+    const updated = { ...manifest, dependencies: { ...manifest.dependencies, [pkgName]: versionStr } };
     fs.writeFileSync(inkPackageTomlPath, TomlParser.write(updated));
 
     // Update quill.lock
@@ -154,7 +187,7 @@ export class AddCommand {
     const lockfile = new Lockfile(new RegistryClient().registryUrl, lockedPkgs)
     lockfile.write(lockfilePath)
 
-    console.log(`Installed ${pkgName} v${pkgVersion.version} → packages/${pkgName.replace('/', '-')}`);
+    console.log(`${cli.success('✓')} Installed ${pkgName} v${pkgVersion.version} → packages/${pkgName.replace('/', '-')}`);
   }
 
   private async computeTarballSha256(tarballPath: string): Promise<string> {
@@ -167,7 +200,7 @@ export class AddCommand {
     })
   }
 
-  private async runVulnerabilityAudit(pkgName: string, version: string, dependencies: Record<string, string>): Promise<{ blocked: boolean }> {
+  private async runVulnerabilityAudit(pkgName: string, version: string, dependencies: Record<string, string>, opts: AddOptions): Promise<{ blocked: boolean }> {
     const scanner = new VulnerabilitiesScanner()
     const allVulns: any[] = []
 
@@ -178,9 +211,14 @@ export class AddCommand {
 
     if (allVulns.length === 0) return { blocked: false }
 
-    console.log(`Vulnerabilities found in ${pkgName}@${version}:`)
+    console.log(`${cli.warn('⚠')} Vulnerabilities found in ${pkgName}@${version}:`)
     for (const v of allVulns) {
       console.log(`  ${v.severity} - ${v.id}: ${v.summary}`)
+    }
+
+    if (opts.yes) {
+      console.log(`${cli.muted('[ skipping confirmation --yes ]')}`);
+      return { blocked: false }
     }
 
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout })

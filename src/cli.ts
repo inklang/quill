@@ -51,7 +51,9 @@ function requireProject(): void {
 program
   .name('quill')
   .description('Package manager for the Ink programming language')
-  .version(getVersion());
+  .version(getVersion())
+  .option('-q, --quiet', 'Suppress splash screens and non-essential output')
+  .option('-v, --verbose', 'Show detailed information (URLs, checksums, resolution)');
 
 program
   .command('new <name>')
@@ -74,9 +76,9 @@ program.command('init').description('Initialize ink-package.toml in existing pro
   await new InitCommand(projectDir).run();
 });
 
-program.command('add <pkg>').description('Install a package').option('--force', 'Skip audit confirmation').action(async (pkg, opts) => {
+program.command('add <pkg>').description('Install a package').option('--force', 'Skip audit confirmation').option('-y, --yes', 'Skip all confirmation prompts').option('--save-exact', 'Save exact version instead of semver range').option('--dry-run', 'Show what would be installed without downloading').action(async (pkg, opts) => {
   requireProject()
-  await new AddCommand(projectDir).run(pkg, { force: !!opts.force });
+  await new AddCommand(projectDir).run(pkg, { force: !!opts.force, yes: !!opts.yes, saveExact: !!opts.saveExact, dryRun: !!opts.dryRun, verbose: !!program.opts().verbose });
 });
 
 program.command('remove <pkg>').description('Uninstall a package').alias('uninstall').action(async (pkg) => {
@@ -84,25 +86,26 @@ program.command('remove <pkg>').description('Uninstall a package').alias('uninst
   await new RemoveCommand(projectDir).run(pkg);
 });
 
-program.command('install').description('Install all dependencies from quill.toml').action(async () => {
+program.command('install').description('Install all dependencies from ink-package.toml').option('--dry-run', 'Show what would be installed without downloading').action(async (opts) => {
   requireProject()
-  await new InstallCommand(projectDir).run();
+  await new InstallCommand(projectDir).run({ dryRun: !!opts.dryRun, verbose: !!program.opts().verbose })
 });
 
 program
   .command('update [packages...]')
   .description('Update dependencies to latest matching version')
-  .action(async (packages: string[]) => {
+  .option('--dry-run', 'Show what would be updated without making changes')
+  .action(async (packages: string[], opts) => {
     requireProject()
-    await new UpdateCommand(projectDir).run(packages)
+    await new UpdateCommand(projectDir).run(packages, { dryRun: !!opts.dryRun, verbose: !!program.opts().verbose })
   });
 
 program.command('ls').description('List installed packages').option('--json', 'Output JSON').action(async (opts) => {
   requireProject()
-  await new LsCommand(projectDir).run(!!opts.json);
+  await new LsCommand(projectDir).run(!!opts.json, !!program.opts().verbose);
 });
 
-program.command('clean').description('Remove .quill-cache/').action(async () => {
+program.command('clean').description('Remove .quill-cache/ (downloaded tarballs) — see also quill cache-info clean').action(async () => {
   requireProject()
   await new CleanCommand(projectDir).run();
 });
@@ -175,8 +178,8 @@ program
 program
   .command('logout')
   .description('Remove saved keypair from ~/.quillrc')
-  .action(() => {
-    new LogoutCommand().run()
+  .action(async () => {
+    await new LogoutCommand().run()
   })
 
 program
@@ -253,7 +256,7 @@ program
 program
   .command('test')
   .description('Run tests')
-  .option('--ink', 'Run Ink package tests (tests/*_test.ink files)')
+  .option('--ink', 'Run Ink package tests (stub — pending VM-side TestContext)')
   .option('--watch', 'Run in watch mode (vitest only)')
   .option('--json', 'Output JSON')
   .action(async (opts) => {

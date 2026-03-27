@@ -84,16 +84,22 @@ export class LoginCommand {
 }
 
 export class LogoutCommand {
-  run(): void {
+  async run(): Promise<void> {
     const registry = process.env['QUILL_REGISTRY'] ?? 'https://lectern.inklang.org'
     const rc = readRc()
 
-    // Best-effort server-side revocation (fire and forget)
     if (rc?.token) {
-      fetch(`${registry}/api/auth/token`, {
-        method: 'DELETE',
-        headers: { 'Authorization': `Bearer ${rc.token}` }
-      }).catch(() => {})
+      try {
+        const res = await fetch(`${registry}/api/auth/token`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${rc.token}` }
+        })
+        if (!res.ok) {
+          console.warn(`Warning: Server token revocation failed (${res.status}). Token cleared locally.`)
+        }
+      } catch (e: any) {
+        console.warn(`Warning: Could not revoke server token (${e.message}). Token cleared locally.`)
+      }
     }
 
     clearRc()

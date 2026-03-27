@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { RegistryClient, RegistryPackage, RegistryPackageVersion } from '../src/registry/client.js';
 import { Semver } from '../src/model/semver.js';
 import { SemverRange } from '../src/model/semver.js';
@@ -93,9 +93,10 @@ describe('RegistryClient', () => {
       }
     })
 
-    it('returns null when no token is available', () => {
+    it('returns null when no token is available', async () => {
       const original = process.env['QUILL_TOKEN']
       delete process.env['QUILL_TOKEN']
+      vi.spyOn(await import('../src/util/keys.js'), 'readRc').mockReturnValue(null)
       try {
         const client = new RegistryClient()
         expect(client.readAuthToken()).toBeNull()

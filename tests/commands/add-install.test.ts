@@ -72,7 +72,7 @@ describe('quill add / install', () => {
     } finally {
       console.log = origLog
     }
-    expect(logs.join('\n')).toContain('Installed 0 package(s)')
+    expect(logs.join('\n')).toContain('No dependencies to install.')
     expect(existsSync(join(TMP, 'quill.lock'))).toBe(true)
   })
 })

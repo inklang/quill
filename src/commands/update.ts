@@ -2,13 +2,22 @@ import { TomlParser } from '../util/toml.js'
 import { RegistryClient } from '../registry/client.js'
 import { FileUtils } from '../util/fs.js'
 import { Lockfile, LockfileEntry } from '../lockfile.js'
+import { Semver } from '../model/semver.js'
+import { SemverRange } from '../model/semver.js'
+import { Spinner } from '../ui/spinner.js'
+import { cli } from '../ui/colors.js'
 import path from 'path'
 import fs from 'fs'
+
+export interface UpdateOptions {
+  dryRun?: boolean
+  verbose?: boolean
+}
 
 export class UpdateCommand {
   constructor(private projectDir: string) {}
 
-  async run(pkgNames: string[]): Promise<void> {
+  async run(pkgNames: string[], opts: UpdateOptions = {}): Promise<void> {
     const inkPackageTomlPath = path.join(this.projectDir, 'ink-package.toml')
     if (!fs.existsSync(inkPackageTomlPath)) {
       console.error('No ink-package.toml found. Run `quill init` or `quill new` first.')
@@ -34,7 +43,11 @@ export class UpdateCommand {
     if (targets.length === 0) return
 
     const client = new RegistryClient()
+    const spinner = new Spinner()
+
+    spinner.start('Fetching registry index...')
     const index = await client.fetchIndex()
+    spinner.succeed('Registry index fetched.')
 
     const packagesDir = path.join(this.projectDir, 'packages')
     const cacheDir = path.join(this.projectDir, '.quill-cache')
@@ -44,7 +57,6 @@ export class UpdateCommand {
 
     for (const depName of targets) {
       const currentRange = deps[depName]
-      // Resolve latest matching the existing range
       const pkgVersion = client.findBestMatch(index, depName, currentRange)
       if (!pkgVersion) {
         console.error(`No version of ${depName} satisfies ${currentRange}`)
@@ -52,33 +64,41 @@ export class UpdateCommand {
       }
 
       const pkgDir = path.join(packagesDir, depName.replace('/', '-'))
-      const alreadyInstalled = fs.existsSync(pkgDir)
 
-      // Check if installed version differs from resolved
       let installedVersion: string | null = null
       const installedManifest = path.join(pkgDir, 'ink-package.toml')
-      if (alreadyInstalled && fs.existsSync(installedManifest)) {
+      if (fs.existsSync(pkgDir) && fs.existsSync(installedManifest)) {
         installedVersion = TomlParser.read(installedManifest).version ?? null
       }
 
       if (installedVersion === pkgVersion.version) {
-        console.log(`${depName} v${pkgVersion.version} is already up to date.`)
+        console.log(`${cli.muted('─')} ${depName} v${pkgVersion.version} is already up to date.`)
         updatedDeps[depName] = deps[depName]
       } else {
-        if (alreadyInstalled) fs.rmSync(pkgDir, { recursive: true, force: true })
-        FileUtils.ensureDir(cacheDir)
-        const tarball = path.join(cacheDir, `${depName.replace('/', '-')}-${pkgVersion.version}.tar.gz`)
-        console.log(`Updating ${depName} → v${pkgVersion.version}...`)
-        await FileUtils.downloadFile(pkgVersion.url, tarball)
-        await FileUtils.extractTarGz(tarball, pkgDir)
-        updatedCount++
-        updatedDeps[depName] = `^${pkgVersion.version}`
+        if (opts.dryRun) {
+          console.log(`[dry-run] Would update ${depName} v${installedVersion ?? '?'} → v${pkgVersion.version}`)
+          if (opts.verbose) {
+            console.log(`  URL: ${pkgVersion.url}`)
+          }
+          updatedDeps[depName] = deps[depName]
+        } else {
+          if (installedVersion) fs.rmSync(pkgDir, { recursive: true, force: true })
+          FileUtils.ensureDir(cacheDir)
+          const tarball = path.join(cacheDir, `${depName.replace('/', '-')}-${pkgVersion.version}.tar.gz`)
+          spinner.start(`Updating ${depName} → v${pkgVersion.version}...`)
+          if (opts.verbose) console.log(`  URL: ${pkgVersion.url}`)
+          await FileUtils.downloadFile(pkgVersion.url, tarball)
+          await FileUtils.extractTarGz(tarball, pkgDir)
+          spinner.succeed(`${depName} updated to v${pkgVersion.version}.`)
+          updatedCount++
+          updatedDeps[depName] = `^${pkgVersion.version}`
+        }
       }
 
       lockedPkgs[`${depName}@${pkgVersion.version}`] = new LockfileEntry(pkgVersion.version, pkgVersion.url)
     }
 
-    // Also carry over any deps we didn't touch
+    // Carry over untouched deps
     for (const [dep, range] of Object.entries(deps)) {
       if (!targets.includes(dep)) {
         const pv = client.findBestMatch(index, dep, range)
@@ -86,7 +106,13 @@ export class UpdateCommand {
       }
     }
 
-    // Only rewrite ink-package.toml if something was actually updated
+    if (opts.dryRun) {
+      const lockfile = new Lockfile(client.registryUrl, lockedPkgs)
+      lockfile.write(path.join(this.projectDir, 'quill.lock'))
+      console.log(`\n${cli.muted('[ dry-run: lockfile updated but no packages modified ]')}`)
+      return
+    }
+
     if (updatedCount > 0) {
       const updated = { ...manifest, dependencies: updatedDeps }
       fs.writeFileSync(inkPackageTomlPath, TomlParser.write(updated))

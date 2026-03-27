@@ -3,6 +3,7 @@ import path from 'path'
 import os from 'os'
 import { TomlParser } from './toml.js'
 import { RegistryClient } from '../registry/client.js'
+import { readRc } from './keys.js'
 
 export type CheckStatus = 'pass' | 'fail' | 'warn'
 
@@ -10,6 +11,7 @@ export interface CheckResult {
   name: string
   status: CheckStatus
   message: string
+  fix?: string
 }
 
 export class Doctor {
@@ -24,8 +26,8 @@ export class Doctor {
     return this.results
   }
 
-  private addResult(name: string, status: CheckStatus, message: string) {
-    this.results.push({ name, status, message })
+  private addResult(name: string, status: CheckStatus, message: string, fix?: string) {
+    this.results.push({ name, status, message, fix })
   }
 
   private async checkRegistry() {
@@ -34,21 +36,19 @@ export class Doctor {
       await client.fetchIndex()
       this.addResult('Registry', 'pass', 'reachable')
     } catch (e: any) {
-      this.addResult('Registry', 'fail', `unreachable: ${e.message}`)
+      this.addResult('Registry', 'fail', `unreachable: ${e.message}`, 'Check your network connection and QUILL_REGISTRY / LECTERN_REGISTRY env var.')
     }
   }
 
   private checkAuth() {
     const envToken = process.env['QUILL_TOKEN']
-    const rcPath = path.join(os.homedir(), '.quillrc')
-    const rcToken = fs.existsSync(rcPath)
-      ? fs.readFileSync(rcPath, 'utf8').match(/^token\s*=\s*(.+)$/m)?.[1]?.trim()
-      : null
+    const rc = readRc()
+    const hasToken = !!(envToken || rc?.token)
 
-    if (envToken || rcToken) {
+    if (hasToken) {
       this.addResult('Auth', 'pass', 'token found')
     } else {
-      this.addResult('Auth', 'warn', 'no token found (run `quill login` to publish)')
+      this.addResult('Auth', 'warn', 'no token found (run `quill login` to publish)', 'Run `quill login` to authenticate with the registry.')
     }
   }
 
@@ -57,7 +57,7 @@ export class Doctor {
     const tomlPath = path.join(projectDir, 'ink-package.toml')
 
     if (!fs.existsSync(tomlPath)) {
-      this.addResult('ink-package.toml', 'warn', 'not in a project directory')
+      this.addResult('ink-package.toml', 'warn', 'not in a project directory', 'Run `quill init` or `quill new <name>` to create a project.')
       return
     }
 
@@ -65,7 +65,7 @@ export class Doctor {
       TomlParser.read(tomlPath)
       this.addResult('ink-package.toml', 'pass', 'valid')
     } catch {
-      this.addResult('ink-package.toml', 'fail', 'parse error')
+      this.addResult('ink-package.toml', 'fail', 'parse error', 'Check ink-package.toml for syntax errors.')
     }
   }
 
@@ -108,7 +108,7 @@ export class Doctor {
       if (allFound) {
         this.addResult('Dependencies', 'pass', 'all installed')
       } else {
-        this.addResult('Dependencies', 'warn', 'some deps not found in registry')
+        this.addResult('Dependencies', 'warn', 'some deps not found in registry', 'Packages may have been unlisted. Run `quill install` to reinstall.')
       }
     } catch {
       this.addResult('Dependencies', 'warn', 'could not check')
@@ -124,10 +124,10 @@ export class Doctor {
       if (res.ok) {
         this.addResult('NVIDIA API', 'pass', 'reachable')
       } else {
-        this.addResult('NVIDIA API', 'warn', 'unreachable')
+        this.addResult('NVIDIA API', 'warn', 'unreachable', 'Set NVIDIA_API_KEY env var for semantic search features.')
       }
     } catch {
-      this.addResult('NVIDIA API', 'warn', 'unreachable (search features may not work)')
+      this.addResult('NVIDIA API', 'warn', 'unreachable (search features may not work)', 'Set NVIDIA_API_KEY env var for semantic search features.')
     }
   }
 
@@ -140,6 +140,9 @@ export class Doctor {
       const icon = r.status === 'pass' ? '✓' : r.status === 'fail' ? '✗' : '⚠'
       const name = r.name.padEnd(maxNameLen)
       console.log(`${indent}${icon} ${name}  ${r.message}`)
+      if (r.fix && r.status !== 'pass') {
+        console.log(`${indent}  → ${r.fix}`)
+      }
     }
 
     const passed = this.results.filter(r => r.status === 'pass').length

@@ -1,4 +1,5 @@
 import { TomlParser } from '../util/toml.js';
+import { cli } from '../ui/colors.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -11,7 +12,7 @@ export interface LsEntry {
 export class LsCommand {
   constructor(private projectDir: string) {}
 
-  async run(outputJson: boolean = false): Promise<void> {
+  async run(outputJson: boolean = false, verbose: boolean = false): Promise<void> {
     const packagesDir = path.join(this.projectDir, 'packages');
     if (!fs.existsSync(packagesDir)) {
       if (outputJson) {
@@ -49,9 +50,9 @@ export class LsCommand {
       console.log(`Installed packages (${entries.length}):`);
       for (const e of entries) {
         if (e.invalid) {
-          console.log(`  ${e.name} (invalid ink-package.toml)`);
+          console.log(`  ${cli.bold(e.name)} ${cli.muted('(invalid ink-package.toml)')}`);
         } else {
-          console.log(`  ${e.name} v${e.version}`);
+          console.log(`  ${cli.bold(e.name)} v${e.version}`);
         }
       }
     }
