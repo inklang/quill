@@ -24,6 +24,7 @@ import { CacheCommand, CacheCleanCommand, CacheLsCommand } from './cache/command
 import { WhyCommand } from './commands/why.js'
 import { TestCommand } from './commands/test.js'
 import { AuditCommand } from './commands/audit.js'
+import { PackCommand } from './commands/pack.js'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 
@@ -221,6 +222,13 @@ program
   })
 
 program
+  .command('pack')
+  .description('Build and package an Ink extension for publishing')
+  .action(async () => {
+    await new PackCommand().run()
+  })
+
+program
   .command('doctor')
   .description('Run diagnostics and check for common issues')
   .option('--json', 'Output JSON')
@@ -291,7 +299,7 @@ program
 const COMMAND_GROUPS = [
   { title: 'Project',      names: ['new', 'init'] },
   { title: 'Dependencies', names: ['add', 'remove', 'install', 'update', 'outdated', 'why', 'ls', 'clean'] },
-  { title: 'Build',        names: ['build', 'check', 'watch', 'run'] },
+  { title: 'Build',        names: ['build', 'check', 'watch', 'run', 'pack'] },
   { title: 'Cache',        names: ['cache'] },
   { title: 'Registry',     names: ['login', 'logout', 'publish', 'unpublish', 'search', 'info'] },
   { title: 'Test',         names: ['test'] },
