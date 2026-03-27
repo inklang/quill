@@ -4,12 +4,15 @@ import { AuthoredGrammar } from '../grammar/api.js'
 import { serialize } from '../grammar/serializer.js'
 import { validate } from '../grammar/validator.js'
 import { writeFileSync, mkdirSync, unlinkSync, readFileSync, existsSync, copyFileSync, readdirSync } from 'fs'
+import { readFile as readFileAsync, writeFile as writeFileAsync } from 'fs/promises'
 import { join, dirname, basename, sep } from 'path'
 import { execSync, spawnSync } from 'child_process'
 import { CacheManifestStore } from '../cache/manifest.js'
 import { hashFile, hashGrammarIr, findDirtyFiles, DirtyFile } from '../cache/util.js'
-import { tmpdir } from 'os'
+import { tmpdir, homedir } from 'os'
 import { pathToFileURL } from 'url'
+import { scanUsingDeclarations } from '../util/using-scan.js'
+import { mergeGrammars } from '../grammar/merge.js'
 
 export class InkBuildCommand {
   constructor(private projectDir: string, private target?: string) {}
@@ -157,6 +160,14 @@ export class InkBuildCommand {
         const outDir = join(distDir, 'scripts');
         mkdirSync(outDir, { recursive: true });
 
+        // Resolve `using` declarations and merge package grammars into base IR
+        const grammarIrFile = (manifest.grammar?.output ?? 'dist/grammar.ir.json').replace(/^dist\//, '');
+        const grammarIrPath = join(distDir, grammarIrFile);
+        if (existsSync(grammarIrPath)) {
+          const scriptPaths = inkFiles.map(f => join(scriptsDir, f));
+          await this.resolveAndMergeGrammars(scriptPaths, grammarIrPath);
+        }
+
         if (opts.full) {
           // Full rebuild: batch mode + fresh manifest
           this.compileScriptsBatch(compiler, scriptsDir, outDir, distDir);
@@ -290,6 +301,49 @@ export class InkBuildCommand {
         }
       }
     }
+  }
+
+  /**
+   * Pre-scan source files for `using` declarations, resolve package grammars
+   * from ~/.quill/packages, and merge them into the base grammar IR.
+   * Overwrites the grammar IR file with the merged result.
+   */
+  private async resolveAndMergeGrammars(
+    scriptFiles: string[],
+    grammarIrPath: string
+  ): Promise<void> {
+    const packageNames = new Set<string>()
+    for (const file of scriptFiles) {
+      const source = await readFileAsync(file, 'utf-8')
+      for (const pkg of scanUsingDeclarations(source)) {
+        packageNames.add(pkg)
+      }
+    }
+
+    if (packageNames.size === 0) return
+
+    const baseGrammar = JSON.parse(await readFileAsync(grammarIrPath, 'utf-8'))
+    const packagesDir = join(homedir(), '.quill', 'packages')
+    const packageGrammars = []
+
+    for (const name of packageNames) {
+      const pkgDir = join(packagesDir, name)
+      const manifestPath = join(pkgDir, 'ink.pkg')
+      try {
+        const manifest = JSON.parse(await readFileAsync(manifestPath, 'utf-8'))
+        const grammarPath = join(pkgDir, manifest.grammar)
+        const grammar = JSON.parse(await readFileAsync(grammarPath, 'utf-8'))
+        packageGrammars.push(grammar)
+      } catch (err: any) {
+        throw new Error(
+          `Failed to resolve package '${name}': ${err.message}. Run 'quill install ${name}' to install it.`
+        )
+      }
+    }
+
+    const merged = mergeGrammars(baseGrammar, packageGrammars)
+    await writeFileAsync(grammarIrPath, JSON.stringify(merged, null, 2))
+    console.log(`Merged grammar from ${packageGrammars.length} package(s) into ${grammarIrPath}`)
   }
 
   private async buildGrammar(packageName: string, grammarEntry: string, grammarOutput: string): Promise<void> {
