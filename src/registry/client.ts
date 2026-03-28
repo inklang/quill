@@ -54,6 +54,17 @@ export class RegistryClient {
     return rc?.token ?? null
   }
 
+  async validateToken(token: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.registryUrl}/api/auth/token`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      })
+      return res.ok
+    } catch {
+      return false
+    }
+  }
+
   async fetchIndex(): Promise<object> {
     const url = `${this.registryUrl}/index.json`;
     const res = await fetch(url);

@@ -25,6 +25,13 @@ export class PublishCommand {
       process.exit(1)
     }
 
+    const client = new RegistryClient()
+    const tokenValid = await client.validateToken(rc.token)
+    if (!tokenValid) {
+      console.error('Session expired or token invalid. Run `quill login` to reauthenticate.')
+      process.exit(1)
+    }
+
     console.log('Building before publish...')
     const buildCmd = new InkBuildCommand(this.projectDir)
     await buildCmd.run()
@@ -49,7 +56,6 @@ export class PublishCommand {
       ? [manifest.target, ...Object.keys(manifest.targets ?? {})]
       : Object.keys(manifest.targets ?? {});
 
-    const client = new RegistryClient()
     // Build full slug from username and package name
     const slug = `${rc.username}/${manifest.name}`
     const url = `${client.registryUrl}/api/packages/${slug}/${manifest.version}`
