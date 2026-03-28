@@ -129,6 +129,39 @@ object WorldClass {
                         val location = Location(world, x, y, z)
                         val entity = world.spawnEntity(location, entityType)
                         InkEntityClass.wrap(entity)
+                    },
+                    "createExplosion" to Value.NativeFunction { args ->
+                        val x = toDouble(args.getOrNull(1)) ?: error("createExplosion requires x")
+                        val y = toDouble(args.getOrNull(2)) ?: error("createExplosion requires y")
+                        val z = toDouble(args.getOrNull(3)) ?: error("createExplosion requires z")
+                        val power = (args.getOrNull(4) as? Value.Int)?.value?.toFloat() ?: 4f
+                        world.createExplosion(x, y, z, power, false, true)
+                        Value.Null
+                    },
+                    "createItem" to Value.NativeFunction { args ->
+                        val materialName = toString(args.getOrNull(1)) ?: error("createItem requires material name")
+                        val count = (args.getOrNull(2) as? Value.Int)?.value ?: 1
+                        val mat = resolveMaterial(materialName)
+                        val stack = org.bukkit.inventory.ItemStack(mat, count)
+                        ItemClass.wrap(stack)
+                    },
+                    "dropItem" to Value.NativeFunction { args ->
+                        val x = toDouble(args.getOrNull(1)) ?: error("dropItem requires x")
+                        val y = toDouble(args.getOrNull(2)) ?: error("dropItem requires y")
+                        val z = toDouble(args.getOrNull(3)) ?: error("dropItem requires z")
+                        val itemValue = args.getOrNull(4) ?: error("dropItem requires item")
+                        val stack = when (itemValue) {
+                            is Value.JavaObject -> itemValue.obj as? org.bukkit.inventory.ItemStack
+                            is Value.Instance -> {
+                                val rawMethod = itemValue.clazz.methods["raw"]
+                                if (rawMethod is Value.NativeFunction) {
+                                    (rawMethod.fn(listOf()) as? Value.JavaObject)?.obj as? org.bukkit.inventory.ItemStack
+                                } else null
+                            }
+                            else -> null
+                        } ?: error("dropItem: invalid item")
+                        val dropped = world.dropItem(org.bukkit.Location(world, x, y, z), stack)
+                        InkEntityClass.wrap(dropped)
                     }
                 )
             )
