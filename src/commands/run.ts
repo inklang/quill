@@ -20,7 +20,7 @@ import chokidar from 'chokidar'
  */
 export function resolveServerDir(
   projectDir: string,
-  manifest: Pick<PackageManifest, 'server'>
+  manifest: Pick<PackageManifest, 'server' | 'target' | 'build'>
 ): string {
   const serverPath = manifest.server?.path
   if (serverPath) {
@@ -28,7 +28,8 @@ export function resolveServerDir(
       ? serverPath
       : join(projectDir, serverPath)
   }
-  return join(homedir(), '.quill', 'server')
+  const targetName = manifest.target ?? manifest.build?.target ?? 'paper'
+  return join(homedir(), '.quill', 'server', targetName)
 }
 
 /**
@@ -81,8 +82,13 @@ export class RunCommand {
 
     this.checkJava()
 
+    const target = this.manifest.target ?? this.manifest.build?.target ?? 'paper'
+    const targetVersion = this.manifest.server?.paper ?? this.manifest.build?.targetVersion ?? '1.21.4'
+    console.log(`Target: ${target.charAt(0).toUpperCase() + target.slice(1)}`)
+    console.log(`Target-Version: ${targetVersion}`)
     console.log(`Server directory: ${this.serverDir}`)
     const paperJarPath = await this.setup()
+    console.log(`Using JAR: ${paperJarPath} (${targetVersion})`)
 
     // Build
     const buildResult = spawnSync(process.execPath, [this.cliPath, 'build'], {
@@ -200,8 +206,9 @@ export class RunCommand {
     mkdirSync(join(serverDir, 'plugins', 'Ink', 'scripts'), { recursive: true })
     mkdirSync(join(serverDir, 'plugins', 'Ink', 'plugins'), { recursive: true })
 
-    // Step 1: Paper JAR (only if none exists)
-    const existingJar = readdirSync(serverDir).find(f => /^paper-.*\.jar$/.test(f))
+    // Step 1: Paper JAR — find one matching the target version, download if absent
+    const targetVersion = this.manifest.server?.paper ?? this.manifest.build?.targetVersion ?? '1.21.4'
+    const existingJar = readdirSync(serverDir).find(f => new RegExp(`^paper-${targetVersion}-\\d+\\.jar$`).test(f))
     let paperJarPath: string
 
     if (!existingJar) {
@@ -253,7 +260,7 @@ export class RunCommand {
       return dest
     }
 
-    const version = this.manifest.server?.paper ?? '1.21.4'
+    const version = this.manifest.server?.paper ?? this.manifest.build?.targetVersion ?? '1.21.4'
     const buildsUrl = `https://api.papermc.io/v2/projects/paper/versions/${version}/builds`
     console.log(`Downloading Paper ${version}...`)
 
@@ -297,9 +304,16 @@ export class RunCommand {
   }
 
   private spawnServer(paperJarPath: string): ChildProcess {
-    const server = spawn('java', ['-jar', paperJarPath, '--nogui'], {
+    const target = this.manifest.target ?? this.manifest.build?.target ?? 'paper'
+    const targetCfg = this.manifest.targets?.[target]
+    const jvmArgs = targetCfg?.jvmArgs ?? []
+    const env = targetCfg?.env
+      ? { ...process.env, ...targetCfg.env }
+      : process.env
+    const server = spawn('java', [...jvmArgs, '-jar', paperJarPath, '--nogui'], {
       cwd: this.serverDir,
       stdio: 'inherit',
+      env,
     })
     server.on('error', (err: any) => {
       if (err.code === 'ENOENT') {

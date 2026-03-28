@@ -16,6 +16,7 @@ export class TomlParser {
     if (!pkg.name) throw new Error('ink-package.toml is missing package.name');
 
     const grammarSection = (data as any).grammar;
+    const buildSection = (data as any).build;
     const runtimeSection = (data as any).runtime;
     const serverSection = (data as any).server;
 
@@ -23,7 +24,12 @@ export class TomlParser {
     const targetsSection = (data as any).targets;
     const targets: Record<string, TargetConfig> | undefined = targetsSection
       ? Object.fromEntries(
-          Object.entries(targetsSection).map(([name, cfg]: [string, any]) => [name, { entry: cfg.entry, jar: cfg.jar }])
+          Object.entries(targetsSection).map(([name, cfg]: [string, any]) => [name, {
+            entry: cfg.entry,
+            jar: cfg.jar,
+            jvmArgs: cfg['jvm-args'],
+            env: cfg.env,
+          }])
         )
       : undefined;
 
@@ -39,6 +45,7 @@ export class TomlParser {
         main: pkg.main ?? pkg.entry ?? 'main',
         dependencies: (data.dependencies as Record<string, string>) ?? {},
         grammar: grammarSection ? { entry: grammarSection.entry, output: grammarSection.output } : undefined,
+        build: buildSection ? { compiler: buildSection.compiler, target: buildSection.target, targetVersion: buildSection['target-version'] } : undefined,
         runtime: { jar: runtimeSection.jar, entry: runtimeSection.entry },
         server: serverSection ? { paper: serverSection.paper, jar: serverSection.jar, path: serverSection.path } : undefined,
         targets: { default: { entry: runtimeSection.entry, jar: runtimeSection.jar } },
@@ -56,6 +63,7 @@ export class TomlParser {
       target: pkg.target,
       dependencies: (data.dependencies as Record<string, string>) ?? {},
       grammar: grammarSection ? { entry: grammarSection.entry, output: grammarSection.output } : undefined,
+      build: buildSection ? { compiler: buildSection.compiler, target: buildSection.target, targetVersion: buildSection['target-version'] } : undefined,
       runtime: runtimeSection ? { jar: runtimeSection.jar, entry: runtimeSection.entry } : undefined,
       server: serverSection ? { paper: serverSection.paper, jar: serverSection.jar, path: serverSection.path } : undefined,
       targets,
@@ -77,12 +85,21 @@ export class TomlParser {
       dependencies: manifest.dependencies,
     };
     if (manifest.grammar) data.grammar = manifest.grammar;
+    if (manifest.build) {
+      const { targetVersion, ...rest } = manifest.build;
+      data.build = { ...rest, ...(targetVersion ? { 'target-version': targetVersion } : {}) };
+    }
     if (manifest.runtime) data.runtime = manifest.runtime;
     if (manifest.server) data.server = manifest.server;
     if (manifest.targets) {
       data.targets = {};
       for (const [name, cfg] of Object.entries(manifest.targets)) {
-        (data.targets as Record<string, any>)[name] = { entry: cfg.entry, ...(cfg.jar ? { jar: cfg.jar } : {}) };
+        (data.targets as Record<string, any>)[name] = {
+          entry: cfg.entry,
+          ...(cfg.jar ? { jar: cfg.jar } : {}),
+          ...(cfg.jvmArgs?.length ? { 'jvm-args': cfg.jvmArgs } : {}),
+          ...(cfg.env && Object.keys(cfg.env).length ? { env: cfg.env } : {}),
+        };
       }
     }
     return toml.stringify(data as any);

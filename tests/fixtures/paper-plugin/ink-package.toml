@@ -1,0 +1,16 @@
+[package]
+name = "paper.plugin.test"
+version = "0.1.0"
+main = "mod"
+
+[dependencies]
+"ink.paper" = "0.1.0"
+
+[grammar]
+entry = "src/grammar.ts"
+output = "dist/grammar.ir.json"
+
+[build]
+compiler = "../../../compiler/printing_press.exe"
+target = "paper"
+target-version = "1.21.11"

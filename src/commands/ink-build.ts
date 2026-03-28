@@ -23,8 +23,8 @@ export class InkBuildCommand {
     // Tracks the runtime JAR hash for cache invalidation
     let currentRuntimeJarHash: string | null = null;
 
-    // Resolve target — use explicit target, then legacy manifest.target, then default
-    const targetName = this.target ?? manifest.target ?? 'default';
+    // Resolve target — explicit arg > [package] target > [build] target > default
+    const targetName = this.target ?? manifest.target ?? manifest.build?.target ?? 'default';
     const targets = manifest.targets ?? {};
 
     // Validate: if a specific target was requested, it must be declared
@@ -151,7 +151,10 @@ export class InkBuildCommand {
     if (existsSync(scriptsDir)) {
       const inkFiles = readdirSync(scriptsDir).filter(f => f.endsWith('.ink'));
       if (inkFiles.length > 0) {
-        const compiler = process.env['INK_COMPILER'] || '';
+        let compiler = process.env['INK_COMPILER'] || manifest.build?.compiler || '';
+        if (compiler && !compiler.startsWith('/') && !compiler.match(/^[A-Za-z]:\\/)) {
+          compiler = join(this.projectDir, compiler);
+        }
         if (!compiler) {
           console.error('Ink compiler not found. Set INK_COMPILER or [build] compiler in ink-package.toml.');
           process.exit(1);
@@ -170,7 +173,7 @@ export class InkBuildCommand {
 
         if (opts.full) {
           // Full rebuild: batch mode + fresh manifest
-          this.compileScriptsBatch(compiler, scriptsDir, outDir, distDir);
+          this.compileScriptsBatch(compiler, scriptsDir, outDir, distDir, existsSync(grammarIrPath) ? grammarIrPath : undefined);
           const grammarHash = hashGrammarIr(distDir);
           const dirtyFiles: DirtyFile[] = inkFiles.map(f => ({
             relativePath: `scripts/${f}`.replace(/\\/g, '/'),
@@ -222,7 +225,7 @@ export class InkBuildCommand {
             console.log('All scripts up to date — skipping compilation');
           } else {
             // Single-file mode per dirty file
-            const compiledCount = this.compileScriptsIncremental(compiler, dirtyFiles, scriptsDir, outDir);
+            const compiledCount = this.compileScriptsIncremental(compiler, dirtyFiles, scriptsDir, outDir, existsSync(grammarIrPath) ? grammarIrPath : undefined);
             console.log(`Compiled ${compiledCount} script(s)`);
 
             // Merge new entries into manifest
@@ -406,20 +409,23 @@ writeFileSync('${grammarOutputPath.replace(/\\/g, '\\\\')}', result);
     compiler: string,
     scriptsDir: string,
     outDir: string,
-    distDir: string
+    distDir: string,
+    grammarIrPath?: string
   ): void {
-    const isPrintingPress = compiler.includes('printing_press') || compiler.includes('printing_press.exe');
+    const isNative = /\.(exe|bat|cmd|sh)$/.test(compiler) || compiler.includes('printing_press');
     const compilerPath = compiler.replace(/\\/g, '/');
     const scriptsDirFwd = scriptsDir.replace(/\\/g, '/');
     const outDirFwd = outDir.replace(/\\/g, '/');
 
-    if (isPrintingPress) {
+    if (isNative) {
+      const grammarFlag = grammarIrPath
+        ? `--grammar "${grammarIrPath.replace(/\\/g, '/')}" `
+        : '';
       try {
         const output = execSync(
-          `"${compilerPath}" compile --sources "${scriptsDirFwd}" --out "${outDirFwd}"`,
+          `"${compilerPath}" compile ${grammarFlag}--sources "${scriptsDirFwd}" --out "${outDirFwd}"`,
           { cwd: this.projectDir, stdio: 'pipe' } as any
         )?.toString() ?? '';
-        // printing_press outputs "Compiled X file(s)" on success
         if (output) console.log(output.trim());
       } catch (e: any) {
         const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '');
@@ -450,10 +456,14 @@ writeFileSync('${grammarOutputPath.replace(/\\/g, '\\\\')}', result);
     compiler: string,
     dirtyFiles: DirtyFile[],
     scriptsDir: string,
-    outDir: string
+    outDir: string,
+    grammarIrPath?: string
   ): number {
-    const isPrintingPress = compiler.includes('printing_press') || compiler.includes('printing_press.exe');
+    const isNative = /\.(exe|bat|cmd|sh)$/.test(compiler) || compiler.includes('printing_press');
     const compilerPath = compiler.replace(/\\/g, '/');
+    const grammarFlag = isNative && grammarIrPath
+      ? `--grammar "${grammarIrPath.replace(/\\/g, '/')}" `
+      : '';
     let compiled = 0;
 
     for (const dirty of dirtyFiles) {
@@ -468,8 +478,8 @@ writeFileSync('${grammarOutputPath.replace(/\\/g, '\\\\')}', result);
 
       let ok = false;
       let result: ReturnType<typeof spawnSync> | null = null;
-      if (isPrintingPress) {
-        result = spawnSync(`"${compilerPath}" compile "${inputFwd}" -o "${outputFwd}"`, {
+      if (isNative) {
+        result = spawnSync(`"${compilerPath}" compile ${grammarFlag}"${inputFwd}" -o "${outputFwd}"`, {
           shell: true,
           cwd: this.projectDir,
         });

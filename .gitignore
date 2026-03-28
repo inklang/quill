@@ -16,3 +16,8 @@ compiler/
 tests/fixtures/gradle-project/runtime/.gradle/
 tests/fixtures/gradle-project/runtime/build/
 .worktrees/
+tests/fixtures/ink.paper/runtime/paper/.gradle/
+tests/fixtures/ink.paper/runtime/paper/build/
+tests/fixtures/paper-plugin/.quill/
+tests/fixtures/paper-plugin/dist/
+tests/fixtures/ink.paper/dist/

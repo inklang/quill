@@ -164,8 +164,12 @@ export class NewCommand {
     const runtimeDir = path.join(targetDir, 'runtime');
     fs.mkdirSync(runtimeDir, { recursive: true });
     fs.writeFileSync(
+      path.join(runtimeDir, 'settings.gradle.kts'),
+      `rootProject.name = "${name}-runtime"\n`
+    );
+    fs.writeFileSync(
       path.join(runtimeDir, 'build.gradle.kts'),
-      `plugins {\n    kotlin("jvm") version "1.9.22"\n}\n\ngroup = "${name}"\nversion = "0.1.0"\n\nrepositories {\n    mavenCentral()\n}\n\ndependencies {\n    compileOnly("io.papermc.paper:paper-api:1.20.4-R0.1-SNAPSHOT")\n}\n\nkotlin {\n    jvmToolchain(17)\n}\n`
+      `plugins {\n    kotlin("jvm") version "1.9.22"\n    id("io.papermc.paperweight.userdev") version "1.7.1"\n}\n\ngroup = "${name}"\nversion = "0.1.0"\n\nrepositories {\n    mavenCentral()\n}\n\ndependencies {\n    paperweight.paperDevBundle("1.21.4-R0.1-SNAPSHOT")\n}\n\nkotlin {\n    jvmToolchain(21)\n}\n`
     );
 
     const ktDir = path.join(runtimeDir, 'src/main/kotlin');

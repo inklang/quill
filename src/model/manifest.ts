@@ -11,6 +11,14 @@ export interface RuntimeConfig {
 export interface TargetConfig {
   entry: string;
   jar?: string;  // For legacy external JAR projects
+  jvmArgs?: string[];
+  env?: Record<string, string>;
+}
+
+export interface BuildConfig {
+  compiler?: string;
+  target?: string;
+  targetVersion?: string;
 }
 
 export interface ServerConfig {
@@ -30,6 +38,7 @@ export interface PackageManifest {
   dependencies: Record<string, string>;
   target?: string;
   grammar?: GrammarConfig;
+  build?: BuildConfig;
   runtime?: RuntimeConfig;  // Legacy
   server?: ServerConfig;    // Server config
   targets?: Record<string, TargetConfig>;  // Multi-target support
