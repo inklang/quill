@@ -1,8 +1,9 @@
-import type { GrammarPackage } from './ir.js'
+import type { GrammarPackage, DeclarationDef } from './ir.js'
 
 export function mergeGrammars(
   base: GrammarPackage,
-  packages: GrammarPackage[]
+  packages: GrammarPackage[],
+  aliases?: Map<string, string>
 ): GrammarPackage {
   if (packages.length === 0) return base
 
@@ -21,15 +22,36 @@ export function mergeGrammars(
   }
 
   for (const pkg of packages) {
+    const alias = aliases?.get(pkg.package)
+    // Track original keywords from this package that were renamed due to conflicts
+    const renamedOriginals = new Set<string>()
+
     for (const decl of pkg.declarations) {
       const existing = declarationOwners.get(decl.keyword)
       if (existing) {
-        throw new Error(
-          `Package ${existing} and ${pkg.package} both provide declaration '${decl.keyword}'`
-        )
+        // Conflict: base/first package always wins (stays unrenamed)
+        // If the conflicting package has an alias, rename its keyword
+        if (alias) {
+          const renamedKeyword = `${alias}_${decl.keyword}`
+          const renamedDecl: DeclarationDef = {
+            ...decl,
+            keyword: renamedKeyword,
+            scopeRules: [...decl.scopeRules],
+          }
+          declarationOwners.set(renamedKeyword, pkg.package)
+          mergedDeclarations.push(renamedDecl)
+          mergedKeywords.push(renamedKeyword)
+          renamedOriginals.add(decl.keyword)
+        } else {
+          throw new Error(
+            `Package ${existing} and ${pkg.package} both provide declaration '${decl.keyword}'. ` +
+            `Use 'using ${pkg.package} as <alias>' to resolve the conflict.`
+          )
+        }
+      } else {
+        declarationOwners.set(decl.keyword, pkg.package)
+        mergedDeclarations.push(decl)
       }
-      declarationOwners.set(decl.keyword, pkg.package)
-      mergedDeclarations.push(decl)
     }
 
     for (const [ruleName, ruleEntry] of Object.entries(pkg.rules)) {
@@ -43,7 +65,13 @@ export function mergeGrammars(
       mergedRules[ruleName] = ruleEntry
     }
 
-    mergedKeywords.push(...pkg.keywords)
+    // Add keywords, skipping originals that were renamed
+    for (const kw of pkg.keywords) {
+      if (renamedOriginals.has(kw)) continue
+      if (!mergedKeywords.includes(kw)) {
+        mergedKeywords.push(kw)
+      }
+    }
   }
 
   return {

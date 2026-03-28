@@ -13,6 +13,7 @@ import { tmpdir, homedir } from 'os'
 import { pathToFileURL } from 'url'
 import { scanUsingDeclarations } from '../util/using-scan.js'
 import { mergeGrammars } from '../grammar/merge.js'
+import { resolveCompiler } from '../util/compiler.js'
 
 export class InkBuildCommand {
   constructor(private projectDir: string, private target?: string) {}
@@ -154,6 +155,9 @@ export class InkBuildCommand {
         let compiler = process.env['INK_COMPILER'] || manifest.build?.compiler || '';
         if (compiler && !compiler.startsWith('/') && !compiler.match(/^[A-Za-z]:\\/)) {
           compiler = join(this.projectDir, compiler);
+        }
+        if (!compiler) {
+          compiler = (await resolveCompiler()) || '';
         }
         if (!compiler) {
           console.error('Ink compiler not found. Set INK_COMPILER or [build] compiler in ink-package.toml.');
@@ -315,21 +319,32 @@ export class InkBuildCommand {
     scriptFiles: string[],
     grammarIrPath: string
   ): Promise<void> {
-    const packageNames = new Set<string>()
+    // package → alias (undefined = no alias)
+    const packageAliases = new Map<string, string | undefined>()
     for (const file of scriptFiles) {
       const source = await readFileAsync(file, 'utf-8')
-      for (const pkg of scanUsingDeclarations(source)) {
-        packageNames.add(pkg)
+      for (const decl of scanUsingDeclarations(source)) {
+        const existing = packageAliases.get(decl.package)
+        if (existing !== undefined && decl.alias !== undefined && existing !== decl.alias) {
+          throw new Error(
+            `Conflicting aliases for package '${decl.package}': '${existing}' vs '${decl.alias}'`
+          )
+        }
+        if (decl.alias !== undefined) {
+          packageAliases.set(decl.package, decl.alias)
+        } else if (!packageAliases.has(decl.package)) {
+          packageAliases.set(decl.package, undefined)
+        }
       }
     }
 
-    if (packageNames.size === 0) return
+    if (packageAliases.size === 0) return
 
     const baseGrammar = JSON.parse(await readFileAsync(grammarIrPath, 'utf-8'))
     const packagesDir = process.env.QUILL_PACKAGES_DIR ?? join(homedir(), '.quill', 'packages')
     const packageGrammars = []
 
-    for (const name of packageNames) {
+    for (const name of packageAliases.keys()) {
       const pkgDir = join(packagesDir, name)
       const manifestPath = join(pkgDir, 'ink.pkg')
       try {
@@ -344,7 +359,7 @@ export class InkBuildCommand {
       }
     }
 
-    const merged = mergeGrammars(baseGrammar, packageGrammars)
+    const merged = mergeGrammars(baseGrammar, packageGrammars, packageAliases)
     await writeFileAsync(grammarIrPath, JSON.stringify(merged, null, 2))
     console.log(`Merged grammar from ${packageGrammars.length} package(s) into ${grammarIrPath}`)
   }

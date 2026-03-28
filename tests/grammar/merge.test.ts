@@ -49,7 +49,7 @@ describe('mergeGrammars', () => {
     expect(result.rules['mobs/mob_body']).toBeDefined()
   })
 
-  it('throws on duplicate declaration keywords across packages', () => {
+  it('throws on duplicate declaration keywords without alias', () => {
     const base = makeGrammar({ package: 'base' })
     const pkg1 = makeGrammar({
       package: 'ink.foo',
@@ -70,7 +70,7 @@ describe('mergeGrammars', () => {
       }],
     })
     expect(() => mergeGrammars(base, [pkg1, pkg2])).toThrow(
-      /ink\.foo.*ink\.bar.*mob/
+      /ink\.foo.*ink\.bar.*mob.*using.*as/
     )
   })
 
@@ -94,5 +94,137 @@ describe('mergeGrammars', () => {
     const pkg = makeGrammar({ package: 'ink.mobs', keywords: ['mob'] })
     const result = mergeGrammars(base, [pkg])
     expect(result.keywords).toEqual(['if', 'else', 'mob'])
+  })
+
+  it('renames conflicting keyword when package has alias', () => {
+    const base = makeGrammar({ package: 'base' })
+    const pkg1 = makeGrammar({
+      package: 'ink.mobs',
+      keywords: ['mob'],
+      declarations: [{
+        keyword: 'mob',
+        nameRule: { type: 'identifier' },
+        scopeRules: [],
+        inheritsBase: true,
+      }],
+    })
+    const pkg2 = makeGrammar({
+      package: 'ink.mythic',
+      keywords: ['mob'],
+      declarations: [{
+        keyword: 'mob',
+        nameRule: { type: 'identifier' },
+        scopeRules: [],
+        inheritsBase: true,
+      }],
+    })
+    const aliases = new Map<string, string>([['ink.mythic', 'mythic']])
+    const result = mergeGrammars(base, [pkg1, pkg2], aliases)
+
+    // First package keeps 'mob', second gets renamed to 'mythic_mob'
+    expect(result.declarations).toHaveLength(2)
+    expect(result.declarations[0].keyword).toBe('mob')
+    expect(result.declarations[1].keyword).toBe('mythic_mob')
+  })
+
+  it('base grammar wins over aliased package', () => {
+    const base = makeGrammar({
+      package: 'my.project',
+      keywords: ['mob'],
+      declarations: [{
+        keyword: 'mob',
+        nameRule: { type: 'identifier' },
+        scopeRules: [],
+        inheritsBase: true,
+      }],
+    })
+    const pkg = makeGrammar({
+      package: 'ink.other',
+      keywords: ['mob'],
+      declarations: [{
+        keyword: 'mob',
+        nameRule: { type: 'identifier' },
+        scopeRules: [],
+        inheritsBase: true,
+      }],
+    })
+    const aliases = new Map<string, string>([['ink.other', 'alt']])
+    const result = mergeGrammars(base, [pkg], aliases)
+
+    expect(result.declarations).toHaveLength(2)
+    expect(result.declarations[0].keyword).toBe('mob')
+    expect(result.declarations[1].keyword).toBe('alt_mob')
+  })
+
+  it('renames multiple conflicting declarations from same aliased package', () => {
+    const base = makeGrammar({ package: 'base' })
+    const pkg1 = makeGrammar({
+      package: 'ink.mobs',
+      keywords: ['mob', 'entity'],
+      declarations: [
+        { keyword: 'mob', nameRule: { type: 'identifier' }, scopeRules: [], inheritsBase: true },
+        { keyword: 'entity', nameRule: { type: 'identifier' }, scopeRules: [], inheritsBase: true },
+      ],
+    })
+    const pkg2 = makeGrammar({
+      package: 'ink.extra',
+      keywords: ['mob', 'entity'],
+      declarations: [
+        { keyword: 'mob', nameRule: { type: 'identifier' }, scopeRules: [], inheritsBase: true },
+        { keyword: 'entity', nameRule: { type: 'identifier' }, scopeRules: [], inheritsBase: true },
+      ],
+    })
+    const aliases = new Map<string, string>([['ink.extra', 'ex']])
+    const result = mergeGrammars(base, [pkg1, pkg2], aliases)
+
+    expect(result.declarations).toHaveLength(4)
+    expect(result.declarations.map(d => d.keyword)).toEqual(['mob', 'entity', 'ex_mob', 'ex_entity'])
+  })
+
+  it('does not rename when aliased but no conflict', () => {
+    const base = makeGrammar({ package: 'base' })
+    const pkg = makeGrammar({
+      package: 'ink.items',
+      keywords: ['item'],
+      declarations: [{
+        keyword: 'item',
+        nameRule: { type: 'identifier' },
+        scopeRules: [],
+        inheritsBase: true,
+      }],
+    })
+    const aliases = new Map<string, string>([['ink.items', 'items']])
+    const result = mergeGrammars(base, [pkg], aliases)
+
+    expect(result.declarations).toHaveLength(1)
+    expect(result.declarations[0].keyword).toBe('item')
+  })
+
+  it('keywords array reflects renames for conflicting aliased packages', () => {
+    const base = makeGrammar({ package: 'base' })
+    const pkg1 = makeGrammar({
+      package: 'ink.mobs',
+      keywords: ['mob'],
+      declarations: [{
+        keyword: 'mob',
+        nameRule: { type: 'identifier' },
+        scopeRules: [],
+        inheritsBase: true,
+      }],
+    })
+    const pkg2 = makeGrammar({
+      package: 'ink.mythic',
+      keywords: ['mob'],
+      declarations: [{
+        keyword: 'mob',
+        nameRule: { type: 'identifier' },
+        scopeRules: [],
+        inheritsBase: true,
+      }],
+    })
+    const aliases = new Map<string, string>([['ink.mythic', 'mythic']])
+    const result = mergeGrammars(base, [pkg1, pkg2], aliases)
+
+    expect(result.keywords).toEqual(['mob', 'mythic_mob'])
   })
 })

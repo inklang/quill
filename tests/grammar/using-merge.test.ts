@@ -1,6 +1,6 @@
 // tests/grammar/using-merge.test.ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { scanUsingDeclarations } from '../../src/util/using-scan.js'
@@ -67,7 +67,7 @@ item Sword {
 }
 `
     const packageNames = scanUsingDeclarations(source)
-    expect(packageNames).toEqual(['ink.sample'])
+    expect(packageNames).toEqual([{ package: 'ink.sample' }])
 
     // 3. Load and merge grammars
     const baseGrammar = makeGrammar({
@@ -93,5 +93,64 @@ item Sword {
     expect(merged.declarations[0].keyword).toBe('print')
     expect(merged.declarations[1].keyword).toBe('item')
     expect(Object.keys(merged.rules)).toContain('ink.sample/item_rarity')
+  })
+
+  it('resolves conflicting keywords with aliased using', () => {
+    // Source with aliased package
+    const source = `using ink.mobs
+using ink.mythic-mobs as mythic
+
+mob Zombie {}
+mythic_mob BossZombie {}
+`
+    const decls = scanUsingDeclarations(source)
+    expect(decls).toEqual([
+      { package: 'ink.mobs' },
+      { package: 'ink.mythic-mobs', alias: 'mythic' },
+    ])
+
+    // Build aliases map as ink-build does
+    const aliases = new Map<string, string | undefined>()
+    for (const d of decls) {
+      if (d.alias !== undefined) {
+        aliases.set(d.package, d.alias)
+      } else {
+        aliases.set(d.package, undefined)
+      }
+    }
+
+    // Base grammar
+    const baseGrammar = makeGrammar({ package: 'my.project' })
+
+    // Both packages declare 'mob'
+    const mobsPkg = makeGrammar({
+      package: 'ink.mobs',
+      keywords: ['mob'],
+      declarations: [{
+        keyword: 'mob',
+        nameRule: { type: 'identifier' },
+        scopeRules: [],
+        inheritsBase: true,
+      }],
+    })
+
+    const mythicPkg = makeGrammar({
+      package: 'ink.mythic-mobs',
+      keywords: ['mob'],
+      declarations: [{
+        keyword: 'mob',
+        nameRule: { type: 'identifier' },
+        scopeRules: [],
+        inheritsBase: true,
+      }],
+    })
+
+    const merged = mergeGrammars(baseGrammar, [mobsPkg, mythicPkg], aliases)
+
+    // Both keywords present: original 'mob' and renamed 'mythic_mob'
+    expect(merged.keywords).toEqual(['mob', 'mythic_mob'])
+    expect(merged.declarations).toHaveLength(2)
+    expect(merged.declarations[0].keyword).toBe('mob')
+    expect(merged.declarations[1].keyword).toBe('mythic_mob')
   })
 })
