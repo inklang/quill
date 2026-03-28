@@ -3,7 +3,7 @@ package org.inklang.paper
 import org.bukkit.event.EventHandler
 import org.bukkit.event.HandlerList
 import org.bukkit.event.Listener
-import org.bukkit.event.player.AsyncPlayerChatEvent
+import org.bukkit.event.player.PlayerChatEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.inklang.ContextVM
@@ -82,7 +82,8 @@ class PlayerListener(
     }
 
     @EventHandler
-    fun onChat(event: AsyncPlayerChatEvent) {
+    @Suppress("DEPRECATION")
+    fun onChat(event: PlayerChatEvent) {
         fire("on_chat", mapOf(
             "player"  to Value.JavaObject(event.player),
             "message" to Value.String(event.message),
