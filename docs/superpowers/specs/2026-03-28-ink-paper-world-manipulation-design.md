@@ -12,7 +12,9 @@ Expose a rich `world` global object in the ink.paper runtime, implemented as a `
 
 ### `world` — Global Instance
 
-Available in all handler contexts. Wrapped as a `Value.Instance` with a `WorldClass` descriptor, delegating to the underlying Bukkit `World` object.
+Must be injected into all handler contexts (mob, player, command). Currently only the legacy bukkit runtime injects `world` (as `Value.JavaObject`). The ink.paper runtime (`MobExecutor.kt`, `PlayerExecutor.kt`, `CommandExecutor.kt`) does not inject it yet — this spec requires adding `world` injection to all three executors.
+
+Wrapped as a `Value.Instance` with a `WorldClass` descriptor, delegating to the underlying Bukkit `World` object.
 
 **Properties (get/set):**
 
@@ -28,7 +30,7 @@ Available in all handler contexts. Wrapped as a `Value.Instance` with a `WorldCl
 | Property | Type | Notes |
 |---|---|---|
 | `name` | string | World name |
-| `seed` | int | World seed |
+| `seed` | int | World seed (truncated to 32-bit from Bukkit's Long) |
 | `environment` | string | "normal", "nether", "the_end" |
 
 **Methods:**
@@ -80,21 +82,23 @@ Read-only snapshot of block state at time of access. Mutate blocks via `world.se
 | `y` | int | Y coordinate |
 | `z` | int | Z coordinate |
 | `biome` | string | Biome name |
-| `light` | int | Block light level (0-15) |
+| `light` | int | Combined light level (block-emitted light, 0-15). Does not include sky light. |
 | `isAir` | bool | |
 | `isLiquid` | bool | |
 | `isSolid` | bool | |
 
 ### `Entity` — Instance returned by `world.spawnEntity(...)` and handlers
 
+Currently mob handlers inject `entity` as `Value.JavaObject(event.entity)`. This spec proposes transitioning entities to `Value.Instance` wrapping (using an `EntityClass` descriptor). This changes how scripts interact with entities — instead of raw Java field/method access, they use the typed property/method API below. Existing scripts using JavaObject-style access will need to be updated.
+
 **Properties (get/set):**
 
 | Property | Type | Read | Write | Notes |
 |---|---|---|---|---|
-| `x` | int | yes | yes | Teleport shortcut |
-| `y` | int | yes | yes | |
-| `z` | int | yes | yes | |
-| `health` | int | yes | yes | Living entities only |
+| `x` | float | yes | yes | Teleport shortcut (sub-block precision) |
+| `y` | float | yes | yes | |
+| `z` | float | yes | yes | |
+| `health` | float | yes | yes | Living entities only |
 
 **Properties (read-only):**
 
@@ -109,8 +113,10 @@ Read-only snapshot of block state at time of access. Mutate blocks via `world.se
 | Method | Returns | Notes |
 |---|---|---|
 | `remove()` | null | Despawn the entity |
-| `teleport(x, y, z)` | null | Move to coordinates |
+| `teleport(x, y, z)` | null | Move to coordinates (atomic — single Bukkit teleport call). Prefer this over setting x/y/z individually, which triggers three separate teleports. |
 | `kill()` | null | Kill the entity |
+
+**Note on coordinate setters:** Setting `entity.x`, `entity.y`, or `entity.z` individually calls Bukkit's `teleport()` for each assignment. For atomic position changes, use `entity.teleport(x, y, z)` to avoid three separate teleport operations.
 
 ## Implementation
 
@@ -124,24 +130,26 @@ Kotlin runtime code in the ink.paper package:
 
 1. **`WorldClass`** — Builds a `ClassDescriptor` for the `world` instance. Each property maps to a `NativeFunction` that reads/writes through the Bukkit `World` object stored in a closure. The descriptor is marked writable (not `readOnly`) to allow `SET_FIELD`.
 
-2. **`BlockClass`** — Builds a `ClassDescriptor` for Block instances. Captures the Bukkit `Block` reference at creation time. All fields are set once and the descriptor is marked `readOnly`.
+2. **`BlockClass`** — Builds a `ClassDescriptor` for Block instances. Captures the Bukkit `Block` state at creation time (true snapshot — reads the Bukkit block once and stores values in instance fields). If the underlying block changes after creation, the Ink Block instance retains its original values. All fields are set once and the descriptor is marked `readOnly`.
 
-3. **Entity extension** — Extend or supplement the existing `EntityClass` with position get/set and health get/set. Position writes call Bukkit's `teleport()` under the hood.
+3. **Entity extension** — The existing `EntityClass` in the legacy bukkit runtime uses `Value.Double` for coordinates and health. The ink.paper runtime currently passes entities as `Value.JavaObject`. This spec proposes: (a) port `EntityClass` to the ink.paper runtime as a `Value.Instance` wrapper, (b) use `float` (Ink `Value.Double`) for coordinates and health consistent with existing conventions, (c) replace `Value.JavaObject(event.entity)` injection in `MobExecutor.kt` with the new `EntityClass` wrapping.
 
-4. **`PaperBindings.kt` change** — Replace `globals["world"] = Value.JavaObject(world)` with `globals["world"] = WorldClass.create(bukkitWorld)`. The `create` function returns a `Value.Instance` with the `WorldClass` descriptor and the Bukkit world reference captured in closures.
+4. **Handler injection** — Add `world` global injection to all three ink.paper executors:
+   - `MobExecutor.kt`: Add `globals["world"] = WorldClass.create(event.entity.world)` alongside existing `entity`, `damage`, etc.
+   - `PlayerExecutor.kt`: Add `globals["world"] = WorldClass.create(event.player.world)`
+   - `CommandExecutor.kt`: Add `globals["world"] = WorldClass.create(sender.world)` (sender must be a Player)
 
 ### Property setter approach
 
-Writable properties on `world` (e.g. `world.time = 1000`) use the existing `SET_FIELD` opcode. The `WorldClass` descriptor fields are pre-populated with `NativeFunction` values that, when read, return the current Bukkit value, and the `SET_FIELD` handler stores the new value. However, since `SET_FIELD` just writes to `obj.fields[name]`, we need a mechanism to sync writes back to Bukkit.
+Writable properties on `world` (e.g. `world.time = 1000`) need to propagate writes back to the Bukkit API. The existing `SET_FIELD` opcode only writes to `obj.fields[name]`, with no callback mechanism.
 
-Options:
-- **A)** Store a custom field map that intercepts writes and calls the Bukkit setter. This requires a small VM change to support custom field stores.
-- **B)** Use methods only (`setTime(1000)`) and expose read-only properties. Simpler but less ergonomic.
-- **C)** Wrap property writes as `NativeFunction` setters in the class descriptor. The VM's `SET_FIELD` writes to `obj.fields`, but we can add a `SET_PROPERTY` opcode that checks for setter methods on the class.
+**Recommended: Replace `SET_FIELD` with `SET_PROPERTY` globally.** This is a single opcode rename in the compiler (emit `SET_PROPERTY` instead of `SET_FIELD` everywhere). The VM handler for `SET_PROPERTY` checks for a `set_<prop>` method on the class descriptor; if found, it calls it (allowing the NativeFunction to delegate to Bukkit); otherwise it falls back to writing `obj.fields[name]` (preserving normal field assignment behavior). This gives all Ink classes computed-setter capability at zero cost to existing code.
 
-**Recommended: Option C** — Add a `SET_PROPERTY` opcode that looks up a setter method (convention: `set_<prop>`) on the class descriptor before falling back to field assignment. This is a small, targeted VM change that enables clean property syntax for all Ink classes.
+**Fallback (v1):** If the VM change is deferred, use methods for writes and read-only properties: `world.getTime()` / `world.setTime(1000)`, with `world.time` as read-only.
 
-If Option C is deferred, fall back to **Option B** (methods for writes, properties for reads) as a v1.
+### Thread safety
+
+All Bukkit API calls (block sets, entity spawns, property writes) must run on the main server thread. Ink event handlers already execute synchronously on the main thread (Bukkit fires events on the main thread), so no additional scheduling is needed. However, if async handlers are added in the future, world manipulation calls will need to be wrapped in `Bukkit.getScheduler().runTask(...)`.
 
 ### Block material strings
 
@@ -153,7 +161,7 @@ Invalid material names throw a `ScriptException` at runtime.
 
 ### Coordinates
 
-All coordinate parameters are `Int`. The Ink VM's `Value.Int` maps directly to Kotlin `Int`. Block coordinates must be in valid world range (Y -64 to 320 for overworld); out-of-range throws `ScriptException`.
+All block coordinate parameters are `Int` (whole blocks). Entity coordinates and health use `float` (Ink `Value.Double`) for sub-block precision, consistent with existing `EntityClass` and `PlayerClass` conventions. Block coordinates must be in valid world range (Y -64 to 320 for overworld); out-of-range throws `ScriptException`.
 
 ## Scope
 
