@@ -78,22 +78,29 @@ class MobListener(
     @EventHandler
     fun onSpawn(event: EntitySpawnEvent) {
         if (event.entity.type != entityType) return
-        fire("on_spawn", mapOf("entity" to Value.JavaObject(event.entity)))
+        fire("on_spawn", mapOf(
+            "entity" to InkEntityClass.wrap(event.entity),
+            "world" to WorldClass.wrap(event.entity.world)
+        ))
     }
 
     @EventHandler
     fun onDeath(event: EntityDeathEvent) {
         if (event.entity.type != entityType) return
-        fire("on_death", mapOf("entity" to Value.JavaObject(event.entity)))
+        fire("on_death", mapOf(
+            "entity" to InkEntityClass.wrap(event.entity),
+            "world" to WorldClass.wrap(event.entity.world)
+        ))
     }
 
     @EventHandler
     fun onDamage(event: EntityDamageEvent) {
         if (event.entity.type != entityType) return
         fire("on_damage", mapOf(
-            "entity" to Value.JavaObject(event.entity),
+            "entity" to InkEntityClass.wrap(event.entity),
             "damage" to Value.Double(event.damage),
-            "cancel" to Value.NativeFunction { event.isCancelled = true; Value.Null }
+            "cancel" to Value.NativeFunction { event.isCancelled = true; Value.Null },
+            "world" to WorldClass.wrap(event.entity.world)
         ))
     }
 
@@ -101,8 +108,9 @@ class MobListener(
     fun onTarget(event: EntityTargetEvent) {
         if (event.entity.type != entityType) return
         fire("on_target", mapOf(
-            "entity" to Value.JavaObject(event.entity),
-            "target" to (event.target?.let { Value.JavaObject(it) } ?: Value.Null)
+            "entity" to InkEntityClass.wrap(event.entity),
+            "target" to (event.target?.let { InkEntityClass.wrap(it) } ?: Value.Null),
+            "world" to WorldClass.wrap(event.entity.world)
         ))
     }
 
@@ -110,8 +118,9 @@ class MobListener(
     fun onInteract(event: PlayerInteractEntityEvent) {
         if (event.rightClicked.type != entityType) return
         fire("on_interact", mapOf(
-            "entity" to Value.JavaObject(event.rightClicked),
-            "player" to Value.JavaObject(event.player)
+            "entity" to InkEntityClass.wrap(event.rightClicked),
+            "player" to Value.JavaObject(event.player),
+            "world" to WorldClass.wrap(event.rightClicked.world)
         ))
     }
 

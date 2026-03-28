@@ -2,6 +2,7 @@ package org.inklang.paper
 
 import org.bukkit.command.Command
 import org.bukkit.command.CommandSender
+import org.bukkit.entity.Player
 import org.inklang.ContextVM
 import org.inklang.grammar.CstNode
 import org.inklang.lang.Builtins
@@ -38,7 +39,12 @@ class CommandExecutor(
                     vm.executeWithLock {
                         vm.setGlobals(mapOf(
                             "sender" to Value.JavaObject(sender),
-                            "args"   to Builtins.newArray(args.map { Value.String(it) }.toMutableList())
+                            "args"   to Builtins.newArray(args.map { Value.String(it) }.toMutableList()),
+                            "world" to if (sender is Player) {
+                                WorldClass.wrap(sender.world)
+                            } else {
+                                Value.Null
+                            }
                         ))
                         vm.execute(chunk.functions[funcIdx])
                     }

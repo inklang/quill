@@ -67,12 +67,18 @@ class PlayerListener(
 
     @EventHandler
     fun onJoin(event: PlayerJoinEvent) {
-        fire("on_join", mapOf("player" to Value.JavaObject(event.player)))
+        fire("on_join", mapOf(
+            "player" to Value.JavaObject(event.player),
+            "world" to WorldClass.wrap(event.player.world)
+        ))
     }
 
     @EventHandler
     fun onQuit(event: PlayerQuitEvent) {
-        fire("on_leave", mapOf("player" to Value.JavaObject(event.player)))
+        fire("on_leave", mapOf(
+            "player" to Value.JavaObject(event.player),
+            "world" to WorldClass.wrap(event.player.world)
+        ))
     }
 
     @EventHandler
@@ -80,7 +86,8 @@ class PlayerListener(
         fire("on_chat", mapOf(
             "player"  to Value.JavaObject(event.player),
             "message" to Value.String(event.message),
-            "cancel"  to Value.NativeFunction { event.isCancelled = true; Value.Null }
+            "cancel"  to Value.NativeFunction { event.isCancelled = true; Value.Null },
+            "world" to WorldClass.wrap(event.player.world)
         ))
     }
 
