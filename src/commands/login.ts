@@ -1,7 +1,7 @@
 import http from 'http'
 import net from 'net'
 import { exec } from 'child_process'
-import { readRc, writeRc, clearRc } from '../util/keys.js'
+import { readRc, writeRc, clearRc, generateKeypair, makeAuthHeader } from '../util/keys.js'
 
 function openBrowser(url: string): void {
   const cmd = process.platform === 'win32' ? `start "" "${url}"`
@@ -30,10 +30,20 @@ export class LoginCommand {
   async run(options: LoginOptions = {}): Promise<void> {
     const registry = process.env['QUILL_REGISTRY'] ?? 'https://lectern.inklang.org'
 
-    // Token-only login for CI environments
+    // Keypair-only login for CI environments
     if (options.token && options.username) {
-      writeRc({ token: options.token, username: options.username, registry })
-      console.log(`Logged in as ${options.username} (token provided via --token)`)
+      // options.token is treated as a pre-generated keyId:privateKeyB64 pair (base64url encoded JSON)
+      // For simplicity, generate a fresh keypair and register it with the registry using the provided token as a Bearer
+      const { keyId, privateKeyB64, publicKeyB64 } = generateKeypair()
+      const res = await fetch(`${registry}/api/auth/cli-token`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${options.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ publicKey: publicKeyB64 }),
+      })
+      if (!res.ok) throw new Error(`Failed to register key: ${res.status} ${await res.text()}`)
+      const { username } = await res.json() as { username: string }
+      writeRc({ keyId, privateKey: privateKeyB64, username: options.username ?? username, registry })
+      console.log(`Logged in as ${options.username ?? username}`)
       return
     }
 
@@ -51,7 +61,10 @@ export class LoginCommand {
     console.log(`If the browser doesn't open, visit: ${authUrl}`)
     openBrowser(authUrl)
 
-    const result = await new Promise<{ token: string; username: string }>((resolve, reject) => {
+    // Generate keypair before the browser opens so it's ready to register
+    const { keyId, privateKeyB64, publicKeyB64 } = generateKeypair()
+
+    const result = await new Promise<{ accessToken: string; username: string }>((resolve, reject) => {
       const timeout = setTimeout(() => {
         server.close()
         reject(new Error('Login timed out after 5 minutes'))
@@ -59,7 +72,7 @@ export class LoginCommand {
 
       const server = http.createServer((req, res) => {
         const url = new URL(req.url ?? '/', `http://127.0.0.1:${port}`)
-        const token = url.searchParams.get('token')
+        const accessToken = url.searchParams.get('access_token')
         const username = url.searchParams.get('username')
 
         res.writeHead(200, { 'Content-Type': 'text/html' })
@@ -68,17 +81,25 @@ export class LoginCommand {
         clearTimeout(timeout)
         server.close()
 
-        if (!token || !username) {
-          reject(new Error('Missing token or username in callback'))
+        if (!accessToken || !username) {
+          reject(new Error('Missing access_token or username in callback'))
         } else {
-          resolve({ token, username })
+          resolve({ accessToken, username })
         }
       })
 
       server.listen(port, '127.0.0.1')
     })
 
-    writeRc({ token: result.token, username: result.username, registry })
+    // Register the public key with Lectern
+    const res = await fetch(`${registry}/api/auth/cli-token`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${result.accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ publicKey: publicKeyB64 }),
+    })
+    if (!res.ok) throw new Error(`Failed to register keypair: ${res.status} ${await res.text()}`)
+
+    writeRc({ keyId, privateKey: privateKeyB64, username: result.username, registry })
     console.log(`Logged in as ${result.username}`)
   }
 }
@@ -88,17 +109,18 @@ export class LogoutCommand {
     const registry = process.env['QUILL_REGISTRY'] ?? 'https://lectern.inklang.org'
     const rc = readRc()
 
-    if (rc?.token) {
+    if (rc?.keyId && rc?.privateKey) {
       try {
+        const authHeader = makeAuthHeader(rc.keyId, rc.privateKey)
         const res = await fetch(`${registry}/api/auth/token`, {
           method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${rc.token}` }
+          headers: { 'Authorization': authHeader }
         })
         if (!res.ok) {
-          console.warn(`Warning: Server token revocation failed (${res.status}). Token cleared locally.`)
+          console.warn(`Warning: Server key revocation failed (${res.status}). Key cleared locally.`)
         }
       } catch (e: any) {
-        console.warn(`Warning: Could not revoke server token (${e.message}). Token cleared locally.`)
+        console.warn(`Warning: Could not revoke server key (${e.message}). Key cleared locally.`)
       }
     }
 

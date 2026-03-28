@@ -1,4 +1,4 @@
-import { readRc } from '../util/keys.js'
+import { readRc, makeAuthHeader } from '../util/keys.js'
 import { RegistryClient } from '../registry/client.js'
 import { TomlParser } from '../util/toml.js'
 import { Lockfile } from '../lockfile.js'
@@ -18,7 +18,7 @@ export class UnpublishCommand {
     }
 
     const rc = readRc()
-    if (!rc || !rc.token) {
+    if (!rc || !rc.keyId || !rc.privateKey) {
       console.error('Not logged in. Run `quill login` first.')
       process.exit(1)
     }
@@ -36,7 +36,7 @@ export class UnpublishCommand {
     const res = await fetch(url, {
       method: 'DELETE',
       headers: {
-        'Authorization': `Bearer ${rc.token}`,
+        'Authorization': makeAuthHeader(rc.keyId, rc.privateKey),
       },
     })
 

@@ -20,17 +20,18 @@ export class PublishCommand {
     }
 
     const rc = readRc()
-    if (!rc || !rc.token) {
+    if (!rc || !rc.keyId || !rc.privateKey) {
       console.error('Not logged in. Run `quill login` first.')
       process.exit(1)
     }
 
     const client = new RegistryClient()
-    const tokenValid = await client.validateToken(rc.token)
-    if (!tokenValid) {
-      console.error('Session expired or token invalid. Run `quill login` to reauthenticate.')
+    const valid = await client.validateAuth()
+    if (!valid) {
+      console.error('Session expired or key invalid. Run `quill login` to reauthenticate.')
       process.exit(1)
     }
+    const authHeader = client.makeAuthHeader()!
 
     console.log('Building before publish...')
     const buildCmd = new InkBuildCommand(this.projectDir)
@@ -62,7 +63,7 @@ export class PublishCommand {
 
     // Use custom content-type to avoid Vercel blocking multipart/form-data PUTs
     const headers: Record<string, string> = {
-      'Authorization': `Bearer ${rc.token}`,
+      'Authorization': authHeader,
       'Content-Type': 'application/vnd.ink-publish+gzip',
       'Content-Length': tarball.length.toString(),
     }

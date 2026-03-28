@@ -1,6 +1,6 @@
 import { Semver } from '../model/semver.js';
 import { SemverRange } from '../model/semver.js';
-import { readRc } from '../util/keys.js';
+import { readRc, makeAuthHeader } from '../util/keys.js';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -46,18 +46,18 @@ export class RegistryClient {
     public readonly registryUrl: string = process.env['LECTERN_REGISTRY'] ?? 'https://lectern.inklang.org'
   ) {}
 
-  readAuthToken(): string | null {
-    const envToken = process.env['QUILL_TOKEN']
-    if (envToken) return envToken
-
+  makeAuthHeader(): string | null {
     const rc = readRc()
-    return rc?.token ?? null
+    if (!rc?.keyId || !rc?.privateKey) return null
+    return makeAuthHeader(rc.keyId, rc.privateKey)
   }
 
-  async validateToken(token: string): Promise<boolean> {
+  async validateAuth(): Promise<boolean> {
+    const header = this.makeAuthHeader()
+    if (!header) return false
     try {
       const res = await fetch(`${this.registryUrl}/api/auth/token`, {
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { 'Authorization': header },
       })
       return res.ok
     } catch {

@@ -80,29 +80,23 @@ describe('RegistryClient', () => {
     });
   });
 
-  describe('readAuthToken', () => {
-    it('reads token from QUILL_TOKEN env var', () => {
-      const original = process.env['QUILL_TOKEN']
-      process.env['QUILL_TOKEN'] = 'test-token-123'
-      try {
-        const client = new RegistryClient()
-        expect(client.readAuthToken()).toBe('test-token-123')
-      } finally {
-        if (original !== undefined) process.env['QUILL_TOKEN'] = original
-        else delete process.env['QUILL_TOKEN']
-      }
+  describe('makeAuthHeader', () => {
+    it('returns null when no keypair is available', async () => {
+      vi.spyOn(await import('../src/util/keys.js'), 'readRc').mockReturnValue(null)
+      const client = new RegistryClient()
+      expect(client.makeAuthHeader()).toBeNull()
     })
 
-    it('returns null when no token is available', async () => {
-      const original = process.env['QUILL_TOKEN']
-      delete process.env['QUILL_TOKEN']
-      vi.spyOn(await import('../src/util/keys.js'), 'readRc').mockReturnValue(null)
-      try {
-        const client = new RegistryClient()
-        expect(client.readAuthToken()).toBeNull()
-      } finally {
-        if (original !== undefined) process.env['QUILL_TOKEN'] = original
-      }
+    it('returns Ink-v1 header when keypair is present', async () => {
+      const { generateKeypair } = await import('../src/util/keys.js')
+      const { keyId, privateKeyB64 } = generateKeypair()
+      vi.spyOn(await import('../src/util/keys.js'), 'readRc').mockReturnValue({
+        keyId, privateKey: privateKeyB64, username: 'test', registry: 'https://example.com'
+      })
+      const client = new RegistryClient()
+      const header = client.makeAuthHeader()
+      expect(header).not.toBeNull()
+      expect(header).toMatch(/^Ink-v1 keyId=/)
     })
   });
 });

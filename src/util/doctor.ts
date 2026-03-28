@@ -41,14 +41,13 @@ export class Doctor {
   }
 
   private checkAuth() {
-    const envToken = process.env['QUILL_TOKEN']
     const rc = readRc()
-    const hasToken = !!(envToken || rc?.token)
+    const hasKey = !!(rc?.keyId && rc?.privateKey)
 
-    if (hasToken) {
-      this.addResult('Auth', 'pass', 'token found')
+    if (hasKey) {
+      this.addResult('Auth', 'pass', 'keypair found')
     } else {
-      this.addResult('Auth', 'warn', 'no token found (run `quill login` to publish)', 'Run `quill login` to authenticate with the registry.')
+      this.addResult('Auth', 'warn', 'no keypair found (run `quill login` to publish)', 'Run `quill login` to authenticate with the registry.')
     }
   }
 

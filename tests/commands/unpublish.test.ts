@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url'
 import { createServer, type Server } from 'http'
 import { describe, it, expect, afterEach, beforeAll, afterAll } from 'vitest'
 import { UnpublishCommand } from '../../src/commands/unpublish.js'
-import { readRc } from '../../src/util/keys.js'
+import { generateKeypair } from '../../src/util/keys.js'
 import path from 'path'
 import os from 'os'
 
@@ -29,9 +29,9 @@ describe('quill unpublish', () => {
     }
 
     server = createServer((req, res) => {
-      // Verify auth header is sent
+      // Verify auth header is sent (Ink-v1 asymmetric format)
       const auth = req.headers['authorization']
-      if (!auth || !auth.startsWith('Bearer test-token-')) {
+      if (!auth || !auth.startsWith('Ink-v1 ')) {
         res.writeHead(401, { 'Content-Type': 'text/plain' })
         res.end('Unauthorized')
         return
@@ -52,9 +52,10 @@ describe('quill unpublish', () => {
     originalEnv = process.env['LECTERN_REGISTRY']
     process.env['LECTERN_REGISTRY'] = registryUrl
 
-    // Write a fake quillrc with test credentials
+    // Write a fake quillrc with a real Ed25519 keypair
+    const { keyId, privateKeyB64 } = generateKeypair()
     require('fs').writeFileSync(originalRcPath,
-      JSON.stringify({ token: 'test-token-abc', username: 'testuser', registry: registryUrl }))
+      JSON.stringify({ keyId, privateKey: privateKeyB64, username: 'testuser', registry: registryUrl }))
   })
 
   afterAll(async () => {
