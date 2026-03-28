@@ -326,7 +326,7 @@ export class InkBuildCommand {
     if (packageNames.size === 0) return
 
     const baseGrammar = JSON.parse(await readFileAsync(grammarIrPath, 'utf-8'))
-    const packagesDir = join(homedir(), '.quill', 'packages')
+    const packagesDir = process.env.QUILL_PACKAGES_DIR ?? join(homedir(), '.quill', 'packages')
     const packageGrammars = []
 
     for (const name of packageNames) {
