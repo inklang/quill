@@ -54,6 +54,7 @@ task CleanupTask {
 ```typescript
 declaration({
   keyword: 'task',
+  inheritsBase: true,
   rules: [
     rule('every_clause', r => r.seq(r.keyword('every'), r.int(), r.keyword('ticks'), r.block()), 'every'),
     rule('delay_clause', r => r.seq(r.keyword('delay'), r.int(), r.keyword('ticks'), r.block()), 'delay'),
@@ -64,7 +65,7 @@ declaration({
 ### Runtime: `TaskExecutor`
 
 - `activate()`: Reads CST for `every_clause` and `delay_clause` matches. Extracts tick count from `TokenMatch(int)` and function index from `FunctionBlock`. Registers `BukkitRunnable` with the Bukkit scheduler.
-- `every` → `runTaskTimer(plugin, delay, period)` where both are the tick count
+- `every` → `runTaskTimer(plugin, delay=0, period=ticks)`. Delay is 0 so the first execution happens immediately, then every `ticks` thereafter.
 - `delay` → `runTaskLater(plugin, delay)` runs once
 - `deactivate()`: Cancels all scheduled tasks. Stores task IDs in a list for cleanup.
 - `handleEvent()`: Not used (tasks have no events).
@@ -97,21 +98,36 @@ command Warp {
 | Rule | Pattern | Notes |
 |---|---|---|
 | `permission_clause` | `seq(keyword('permission'), string())` | Optional permission node |
-| `aliases_clause` | `seq(keyword('aliases'), block())` | Block returns an array of strings |
+| `alias_clause` | `seq(keyword('alias'), string())` | Single alias string, can repeat |
 | `on_execute_clause` | `seq(keyword('on_execute'), block())` | Handler (replaces existing `command_clause`) |
 
 The existing `command_clause` (bare `block()` with no keyword prefix) is kept for backwards compatibility. `on_execute` is the preferred form going forward.
+
+Aliases use a repeatable `alias` clause (not an array block) to avoid the complexity of executing a block at activation time:
+
+```
+command Warp {
+    permission "warp.use"
+    alias "w"
+    alias "tp"
+    on_execute {
+        let dest = args[0]
+        java.call(player, "sendMessage", "Warping to " + dest)
+    }
+}
+```
 
 **Updated declaration:**
 
 ```typescript
 declaration({
   keyword: 'command',
+  inheritsBase: true,
   rules: [
     rule('on_execute_clause', r => r.seq(r.keyword('on_execute'), r.block()), 'on_execute'),
     rule('command_clause', r => r.block(), 'on_execute'),  // backwards compat
     rule('permission_clause', r => r.seq(r.keyword('permission'), r.string()), 'permission'),
-    rule('aliases_clause', r => r.seq(r.keyword('aliases'), r.block()), 'aliases'),
+    rule('alias_clause', r => r.seq(r.keyword('alias'), r.string()), 'alias'),
   ]
 })
 ```
@@ -119,7 +135,7 @@ declaration({
 ### Runtime: `CommandExecutor` (enhanced)
 
 - Read `permission_clause` from CST. If present, set `command.setPermission(value)` on the registered `PluginCommand`.
-- Read `aliases_clause` from CST. The block compiles to a function that returns an Ink Array — extract string values and set `command.setAliases(list)`.
+- Read all `alias_clause` matches from CST. Each provides a string value. Collect all into a list and set `command.setAliases(list)`.
 - `on_execute` handler receives globals: `sender` (Player or ConsoleCommandSender), `args` (Ink Array of strings), `world` (WorldClass instance, null if console sender).
 
 ---
@@ -133,10 +149,10 @@ New declaration: `config`
 ```
 config DungeonConfig {
     file "dungeon_config.yml"
-    default_difficulty = "normal"
-    max_players = 10
-    respawn_time = 30
-    debug = false
+    default_difficulty: "normal"
+    max_players: 10
+    respawn_time: 30
+    debug: false
 }
 ```
 
@@ -145,18 +161,19 @@ config DungeonConfig {
 | Rule | Pattern | Handler |
 |---|---|---|
 | `file_clause` | `seq(keyword('file'), string())` | `"file"` |
-| `config_entry_clause` | `seq(identifier(), literal('='), choice(string(), int(), float(), keyword('true'), keyword('false')))` | `"config_entry"` |
+| `config_entry_clause` | `seq(identifier(), literal(':'), choice(string(), int(), float(), keyword('true'), keyword('false')))` | `"config_entry"` |
 
-The `config_entry_clause` pattern is: `identifier = value` where value is a string, int, float, or boolean literal.
+The `config_entry_clause` uses `:` as the separator (not `=`) because `=` is the Ink assignment operator token. The tokenizer produces an ASSIGNMENT token for `=`, not a literal matchable by `literal('=')`. Using `:` avoids this ambiguity — it is not a reserved token in Ink's tokenizer.
 
 **Declaration definition:**
 
 ```typescript
 declaration({
   keyword: 'config',
+  inheritsBase: true,
   rules: [
     rule('file_clause', r => r.seq(r.keyword('file'), r.string()), 'file'),
-    rule('config_entry_clause', r => r.seq(r.identifier(), r.literal('='), r.choice(r.string(), r.int(), r.float(), r.keyword('true'), r.keyword('false'))), 'config_entry'),
+    rule('config_entry_clause', r => r.seq(r.identifier(), r.literal(':'), r.choice(r.string(), r.int(), r.float(), r.keyword('true'), r.keyword('false'))), 'config_entry'),
   ]
 })
 ```
@@ -182,6 +199,8 @@ declaration({
 | Direct property access | any | `DungeonConfig.max_players` reads from the config map |
 
 Direct property access works via `GET_FIELD` on the `Value.Instance` — the ConfigExecutor stores all config values as fields on the instance. `SET_FIELD` writes to the in-memory map but does not auto-save.
+
+**Constraint:** Config key names must not collide with the method names `get`, `set`, `save`, `reload`. The VM's `GET_FIELD` checks instance fields before methods, so a key named `save` would shadow the `save()` method. The ConfigExecutor should warn at activation time if any key name matches a method name.
 
 **Usage in scripts:**
 
@@ -242,6 +261,7 @@ scoreboard DungeonScores {
     objective "kills" {
         criteria "playerKillCount"
         display "Player Kills"
+        slot "sidebar"
     }
     objective "deaths" {
         criteria "playerDeathCount"
@@ -269,6 +289,9 @@ team RedTeam {
 | `objective_clause` | `seq(keyword('objective'), string(), block())` | `"objective"` |
 | `criteria_clause` | `seq(keyword('criteria'), string())` | `"criteria"` |
 | `display_clause` | `seq(keyword('display'), string())` | `"display"` |
+| `slot_clause` | `seq(keyword('slot'), choice(keyword('sidebar'), keyword('player_list'), keyword('below_name')))` | `"slot"` |
+
+The `slot_clause` is optional. If omitted, the objective is created but not displayed to players. Valid slots: `sidebar`, `player_list`, `below_name` (maps to Bukkit `DisplaySlot` enum). Only one objective per slot — last one wins.
 
 **Team grammar rules:**
 
@@ -287,7 +310,8 @@ team RedTeam {
   2. For each `objective_clause`, creates a Bukkit `Objective` with the given name
   3. Reads `criteria_clause` for the criteria type (default: `"dummy"`)
   4. Reads `display_clause` for the display name (default: objective name)
-  5. Registers the scoreboard globally
+  5. Reads `slot_clause` if present. Maps keyword to `DisplaySlot` enum: `"sidebar"` → `SIDEBAR`, `"player_list"` → `PLAYER_LIST`, `"below_name"` → `BELOW_NAME`. Calls `objective.setDisplaySlot(slot)`. If omitted, objective is created but not displayed.
+  6. Registers the scoreboard globally
 
 - Exposes a `ScoreboardClass` instance as a global with the declaration name. Methods:
 
@@ -303,9 +327,32 @@ team RedTeam {
   1. Creates a Bukkit `Team` on the main scoreboard
   2. Reads `prefix_clause`, `suffix_clause`, `friendly_fire_clause` from CST and applies to the team
   3. For `on_join` / `on_leave`, no Bukkit events exist for team changes — these handlers are called programmatically when `player.join_team(name)` or `player.leave_team(name)` is called (see PlayerClass extensions below)
+  4. Registers itself with `PaperBridge.teamRegistry` so PlayerClass can look up handlers by team name
 
-- `deactivate()`: Unregisters the team from the scoreboard.
+- `deactivate()`: Unregisters the team from the scoreboard and removes itself from `PaperBridge.teamRegistry`.
 - Exposes the team name as a string global for use with player methods.
+
+### Cross-Executor Communication: Team Registry
+
+Team `on_join`/`on_leave` handlers need to be triggered from `PlayerClass.join_team()`/`leave_team()` methods, which requires cross-executor communication. This is a new pattern in the ink.paper bridge.
+
+**Solution:** Add a `TeamRegistry` to `PaperBridge`:
+
+```kotlin
+class PaperBridge : PackageBridge {
+    val teamRegistry = mutableMapOf<String, TeamExecutor>()
+
+    // In createExecutor("team", ...):
+    // executor is stored in teamRegistry[teamName] = executor
+}
+```
+
+`PlayerClass` methods receive a reference to `PaperBridge` (via `BukkitHostAPI` or constructor injection). When `join_team(teamName)` is called:
+1. Look up `TeamExecutor` from `bridge.teamRegistry[teamName]`
+2. If found and has `on_join` handler: construct globals (`player`), call `vm.executeWithLock { vm.setGlobals(globals); vm.execute(chunk.functions[funcIdx]) }`
+3. If not found, just perform the Bukkit team add without triggering a handler
+
+This is the simplest approach — the bridge is the natural coordination point since it creates all executors.
 
 ### PlayerClass Team Methods
 
@@ -314,7 +361,7 @@ team RedTeam {
 | `join_team(team_name)` | null | Add player to team. Triggers team's `on_join` handler if defined. |
 | `leave_team(team_name)` | null | Remove player from team. Triggers team's `on_leave` handler if defined. |
 
-**Note:** `on_join` / `on_leave` on teams are not Bukkit events — they are callbacks triggered by `join_team` / `leave_team` method calls. The TeamExecutor registers itself with a registry so PlayerClass can look up and trigger handlers.
+**Note:** `on_join` / `on_leave` on teams are not Bukkit events — they are callbacks triggered by `join_team` / `leave_team` method calls. See "Cross-Executor Communication: Team Registry" above for the implementation mechanism.
 
 ---
 
@@ -352,7 +399,7 @@ team RedTeam {
 | `getHeight(x, z)` | int | Highest non-air block Y |
 | `spawnEntity(type, x, y, z)` | Entity | Spawn entity, returns EntityClass instance |
 | `dropItem(x, y, z, item)` | Entity | Drop an ItemStack at location |
-| `createExplosion(x, y, z, power)` | null | Create explosion |
+| `createExplosion(x, y, z, power)` | null | Create explosion. Sets fire=false, blockDamage=true by default. |
 
 ### `BlockClass` Descriptor
 
@@ -385,7 +432,11 @@ Add `world` global to all three existing executors:
 
 ### Thread Safety
 
-All Bukkit API calls run on the main server thread. Ink event handlers execute synchronously on the main thread, so no additional scheduling needed.
+Most Bukkit event handlers fire on the main server thread, so Ink event handlers execute synchronously and can safely call Bukkit APIs. **Exception:** The existing `PlayerExecutor.on_chat` handler listens on `AsyncPlayerChatEvent`, which fires on an async thread. This is a pre-existing issue in v0.1.0.
+
+**For v0.2.0, the fix is:** Switch `PlayerExecutor` from `AsyncPlayerChatEvent` to the synchronous `PlayerChatEvent`. `PlayerChatEvent` is deprecated in Paper but still functional and thread-safe. Using it ensures all Ink handlers run on the main thread, which is critical since the new PlayerClass methods (give, teleport, etc.) call Bukkit APIs that require the main thread.
+
+If async chat is needed in the future, the handler should wrap execution in `Bukkit.getScheduler().runTask(plugin, lambda)` to bounce back to the main thread before calling Bukkit APIs or executing Ink code.
 
 ### Block Material Strings
 
@@ -491,13 +542,13 @@ let runs = db.from("dungeon_runs").where("player", player.name).findAll()
 
 ### Enhancements
 
-Minor additions to the existing `DbModule`:
+Minor additions to the existing `DbModule`. All new methods are added to the existing `db.from("name")` query builder chain — no new `db.table()` entry point.
 
 | Method | Returns | Notes |
 |---|---|---|
 | `db.save()` | null | Force-write all tables to disk |
-| `db.table("name").count()` | int | Count rows |
-| `db.table("name").deleteWhere("key", value)` | int | Delete matching rows, returns count |
+| `db.from("name").count()` | int | Count rows |
+| `db.from("name").deleteWhere("key", value)` | int | Delete matching rows, returns count |
 
 These are small additions to the existing `TableRuntime` / `QueryBuilderInstance` — no new architecture.
 
@@ -532,6 +583,8 @@ region ShadowCrypt {
 | `world_clause` | `seq(keyword('world'), string())` | `"world"` |
 | `min_clause` | `seq(keyword('min'), int(), literal(','), int(), literal(','), int())` | `"min"` |
 | `max_clause` | `seq(keyword('max'), int(), literal(','), int(), literal(','), int())` | `"max"` |
+
+**Note on negative coordinates:** The grammar uses `int()` which produces positive integer tokens. For Ink's tokenizer does this `-100` would tokenize as the -` (minus), followed by `100`). The grammar uses `int()` which produces `-100` as a single negative integer token. The If the tokenizer does not support this, coordinates must use positive absolute values: e.g., `min 0 100 0 200` or
 | `on_enter_clause` | `seq(keyword('on_enter'), block())` | `"on_enter"` |
 | `on_leave_clause` | `seq(keyword('on_leave'), block())` | `"on_leave"` |
 
