@@ -23,11 +23,11 @@ object InventoryClass {
                     val slot = (args.getOrNull(0) as? Value.Int)?.value ?: return@NativeFunction Value.Null
                     val itemValue = args.getOrNull(1) ?: return@NativeFunction Value.Null
                     val stack = when (itemValue) {
-                        is Value.JavaObject -> itemValue.obj as? org.bukkit.inventory.ItemStack
+                        is Value.JavaObject -> itemValue.javaObject as? org.bukkit.inventory.ItemStack
                         is Value.Instance -> {
                             val rawMethod = itemValue.clazz.methods["raw"]
                             if (rawMethod is Value.NativeFunction) {
-                                (rawMethod.fn(listOf()) as? Value.JavaObject)?.obj as? org.bukkit.inventory.ItemStack
+                                (rawMethod.fn(listOf()) as? Value.JavaObject)?.javaObject as? org.bukkit.inventory.ItemStack
                             } else null
                         }
                         else -> null

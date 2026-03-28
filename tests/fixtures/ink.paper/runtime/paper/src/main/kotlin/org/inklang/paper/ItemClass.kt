@@ -19,7 +19,7 @@ object ItemClass {
                     Value.Null
                 },
                 "name" to Value.NativeFunction {
-                    val name = stack.itemMeta?.displayName() ?: stack.type.name
+                    val name = stack.itemMeta?.displayName()?.toString() ?: stack.type.name
                     Value.String(name)
                 },
                 "set_name" to Value.NativeFunction { args ->
