@@ -29,13 +29,13 @@ grammar mygame
 ### 2.2 Import
 
 ```
-using <package>
+import <package>
 ```
 
 Example:
 ```
-using base_engine
-using physics
+import base_engine
+import physics
 ```
 
 ### 2.3 Keyword Declaration
@@ -278,7 +278,7 @@ This file is then loaded by `printing_press::grammar::load_grammar()` and merged
 
 ## 4. GrammarParser Changes
 
-**This is a complete parser rewrite.** The existing `parse()` loop (which handles `grammar`, `using`, `declare keyword`) is replaced with a new loop that handles the new syntax (`grammar`, `using`, `keyword`, `rule`).
+**This is a complete parser rewrite.** The existing `parse()` loop (which handles `grammar`, `using`, `declare keyword`) is replaced with a new loop that handles the new syntax (`grammar`, `import`, `keyword`, `rule`).
 
 ### 4.1 New `parse()` Loop
 
@@ -294,7 +294,7 @@ pub fn parse(&mut self) -> Result<GrammarIr> {
         if self.is_at_end() { break; }
 
         match self.peek_word().as_deref() {
-            Some("using")   => imports.push(self.parse_using()?),
+            Some("import")  => imports.push(self.parse_import()?),
             Some("keyword") => { let k = self.parse_keyword_decl()?; keywords.insert(k.name.clone(), k); }
             Some("rule")    => { let r = self.parse_rule_def()?; rules.insert(r.name.clone(), r); }
             Some("grammar") => return Err(self.error("grammar declaration must be at the top")),
@@ -309,7 +309,7 @@ pub fn parse(&mut self) -> Result<GrammarIr> {
 ### 4.2 New Parsing Methods
 
 - `parse_grammar_decl() -> Result<String>` — parses `grammar <name>` (no semicolon in new syntax)
-- `parse_using() -> Result<String>` — parses `using <package>`
+- `parse_import() -> Result<String>` — parses `import <package>`
 - `parse_keyword_decl() -> Result<KeywordDef>` — parses `keyword <name> = "<v1>" | "<v2>"`
 - `parse_rule_def() -> Result<GrammarRule>` — parses `rule <name> [inherits <base>] -> <pattern> [handler(...)]?`
 - `parse_pattern() -> Result<Pattern>` — entry point for pattern parsing (calls `parse_choice`)
