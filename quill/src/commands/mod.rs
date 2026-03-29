@@ -2,10 +2,6 @@ use async_trait::async_trait;
 use crate::context::Context;
 use crate::error::Result;
 
-pub mod audit;
-pub mod cache;
-pub mod doctor;
-
 #[async_trait]
 pub trait Command: Send + Sync {
     async fn execute(&self, ctx: &Context) -> Result<()>;
