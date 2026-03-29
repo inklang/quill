@@ -267,6 +267,32 @@ export class InkBuildCommand {
     writeFileSync(join(distDir, 'ink-manifest.json'), JSON.stringify(inkManifest, null, 2));
     const manifestRel = distDir.endsWith(`dist${sep}${targetName}`) ? `dist/${targetName}/` : 'dist/';
     console.log(`Wrote ${manifestRel}ink-manifest.json`);
+
+    // Deploy to server if [server] path is configured
+    if (manifest.server?.path) {
+      const { resolveServerDir } = await import('../util/server-setup.js')
+      const serverDir = resolveServerDir(this.projectDir, manifest)
+
+      if (!existsSync(serverDir)) {
+        console.error(`Server directory not found: ${serverDir}`)
+        console.error('Run `quill setup` first.')
+        process.exit(1)
+      }
+
+      const inkPluginsDir = join(serverDir, 'plugins', 'Ink')
+      if (!existsSync(inkPluginsDir)) {
+        mkdirSync(join(inkPluginsDir, 'scripts'), { recursive: true })
+        mkdirSync(join(inkPluginsDir, 'plugins'), { recursive: true })
+        console.log('Warning: Ink plugin not found in server — created plugins/Ink/ directory')
+      }
+
+      const { deployScripts: deployScriptsFn, deployGrammarJars: deployGrammarJarsFn } = await import('./run.js')
+      const deployTargetName = this.target ?? manifest.target ?? manifest.build?.target ?? 'default'
+
+      deployScriptsFn(serverDir, this.projectDir)
+      deployGrammarJarsFn(serverDir, this.projectDir, deployTargetName)
+      console.log(`Deployed to ${serverDir}`)
+    }
   }
 
   /**
