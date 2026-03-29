@@ -1,5 +1,6 @@
 mod cli;
 mod context;
+pub mod audit;
 pub mod error;
 pub mod manifest;
 pub mod registry;

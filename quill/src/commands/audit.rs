@@ -1,8 +1,7 @@
 use async_trait::async_trait;
-use std::collections::HashSet;
-use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::audit::{BytecodeScanner, OsvClient, Severity};
 use crate::commands::Command;
 use crate::context::Context;
 use crate::error::{QuillError, Result};
@@ -13,111 +12,129 @@ pub struct Audit {
     pub no_ignore: bool,
 }
 
-/// Bytecode scanner to detect potentially unsafe operations.
-struct BytecodeScanner;
-
-impl BytecodeScanner {
-    /// Scan an .inkc file for potentially unsafe operations.
-    fn scan_file(path: &Path) -> Result<Vec<String>> {
-        let content = fs::read_to_string(path)
-            .map_err(|e| QuillError::io_error("failed to read bytecode file", e))?;
-
-        // Parse the JSON bytecode
-        let bytecode: serde_json::Value = serde_json::from_str(&content)
-            .map_err(|e| QuillError::RegistryAuth {
-                message: format!("failed to parse bytecode JSON: {}", e),
-            })?;
-
-        let mut unsafe_ops = Vec::new();
-
-        // Check for dangerous operations in the bytecode
-        if let Some(ops) = bytecode.get("operations").and_then(|o| o.as_array()) {
-            for op in ops {
-                if let Some(name) = op.get("name").and_then(|n| n.as_str()) {
-                    // Check for unsafe operations
-                    if is_unsafe_operation(name) {
-                        unsafe_ops.push(name.to_string());
-                    }
-                }
-            }
-        }
-
-        Ok(unsafe_ops)
-    }
-}
-
-/// Check if an operation is considered unsafe.
-fn is_unsafe_operation(op: &str) -> bool {
-    matches!(op,
-        "exec" |
-        "eval" |
-        "system" |
-        "runtime.exec" |
-        "process.exit"
-    )
-}
-
 #[async_trait]
 impl Command for Audit {
     async fn execute(&self, ctx: &Context) -> Result<()> {
-        println!("Auditing bytecode for vulnerabilities...");
+        println!("Auditing project for vulnerabilities...");
 
-        // Find all .inkc files in the project
-        let target_dir = ctx.project_dir.join("target").join("ink");
-        let mut inkc_files = Vec::new();
-
-        if target_dir.exists() {
-            find_inkc_files(&target_dir, &mut inkc_files)?;
-        } else {
-            // Look in src as well
-            let src_dir = ctx.project_dir.join("src");
-            if src_dir.exists() {
-                find_inkc_files(&src_dir, &mut inkc_files)?;
-            }
-        }
-
-        if inkc_files.is_empty() {
-            println!("No compiled bytecode found. Run 'quill build' first.");
-            return Ok(());
-        }
-
-        // Scan each file
         let mut issues = Vec::new();
-        for file in &inkc_files {
-            if let Ok(unsafe_ops) = BytecodeScanner::scan_file(file) {
-                if !unsafe_ops.is_empty() {
-                    issues.push((file.clone(), unsafe_ops));
-                }
-            }
-        }
+
+        // Scan bytecode files
+        let bytecode_issues = scan_bytecode(ctx).await?;
+        issues.extend(bytecode_issues);
+
+        // Scan dependencies via OSV
+        let osv_issues = scan_dependencies(ctx).await?;
+        issues.extend(osv_issues);
 
         if issues.is_empty() {
-            println!("No vulnerabilities found in {} bytecode files", inkc_files.len());
+            println!("No vulnerabilities found.");
             return Ok(());
         }
 
         // Report issues
-        println!("Found potential issues in {} files:", issues.len());
-        for (file, ops) in &issues {
-            println!("\n{}:", file.display());
-            for op in ops {
-                println!("  - Potentially unsafe operation: {}", op);
+        println!("\nFound {} vulnerability(ies):", issues.len());
+        for issue in &issues {
+            println!("\n[{}] {}", issue.severity, issue.id);
+            println!("  Summary: {}", issue.summary);
+            if !issue.references.is_empty() {
+                println!("  References:");
+                for r in &issue.references {
+                    println!("    - {}", r);
+                }
             }
         }
 
-        // Query OSV.dev in a full implementation
-        // For now, just report what we found
-
-        if !issues.is_empty() {
-            return Err(QuillError::VulnerabilitiesFound { count: issues.len() });
-        }
-
-        Ok(())
+        Err(QuillError::VulnerabilitiesFound { count: issues.len() })
     }
 }
 
+struct VulnerabilityIssue {
+    id: String,
+    severity: String,
+    summary: String,
+    references: Vec<String>,
+}
+
+async fn scan_bytecode(ctx: &Context) -> Result<Vec<VulnerabilityIssue>> {
+    let target_dir = ctx.project_dir.join("target").join("ink");
+    let mut inkc_files = Vec::new();
+
+    if target_dir.exists() {
+        find_inkc_files(&target_dir, &mut inkc_files)?;
+    } else {
+        let src_dir = ctx.project_dir.join("src");
+        if src_dir.exists() {
+            find_inkc_files(&src_dir, &mut inkc_files)?;
+        }
+    }
+
+    let mut issues = Vec::new();
+
+    for file in &inkc_files {
+        match BytecodeScanner::scan(file) {
+            Ok(violations) => {
+                for v in violations {
+                    issues.push(VulnerabilityIssue {
+                        id: format!("BYTE-001: {} in {}", v.operation, file.display()),
+                        severity: "High".to_string(),
+                        summary: format!(
+                            "Disallowed operation '{}' found at {}",
+                            v.operation, v.location
+                        ),
+                        references: vec![],
+                    });
+                }
+            }
+            Err(e) => {
+                eprintln!("Warning: failed to scan {}: {}", file.display(), e);
+            }
+        }
+    }
+
+    Ok(issues)
+}
+
+async fn scan_dependencies(ctx: &Context) -> Result<Vec<VulnerabilityIssue>> {
+    let lockfile = match &ctx.lockfile {
+        Some(lf) => lf,
+        None => return Ok(Vec::new()),
+    };
+
+    let client = OsvClient::new();
+    let mut issues = Vec::new();
+
+    for (name, package) in &lockfile.packages {
+        match client.scan(name, &package.version).await {
+            Ok(vulns) => {
+                for vuln in vulns {
+                    let severity_str = match vuln.severity {
+                        Some(Severity::Critical) => "Critical",
+                        Some(Severity::High) => "High",
+                        Some(Severity::Medium) => "Medium",
+                        Some(Severity::Low) => "Low",
+                        None => "Unknown",
+                    };
+
+                    issues.push(VulnerabilityIssue {
+                        id: vuln.id,
+                        severity: severity_str.to_string(),
+                        summary: vuln.summary,
+                        references: vuln.references,
+                    });
+                }
+            }
+            Err(e) => {
+                eprintln!("Warning: failed to query OSV for {}: {}", name, e);
+            }
+        }
+    }
+
+    Ok(issues)
+}
+
 fn find_inkc_files(dir: &Path, results: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in fs::read_dir(dir)
+    for entry in std::fs::read_dir(dir)
         .map_err(|e| QuillError::io_error(&format!("failed to read dir {}", dir.display()), e))?
     {
         let entry = entry
