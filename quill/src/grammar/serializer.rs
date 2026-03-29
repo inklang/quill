@@ -252,3 +252,86 @@ mod tests {
         assert!(pkg.declarations.iter().any(|d| d.keyword == "on_click"));
     }
 }
+
+#[cfg(test)]
+mod round_trip_tests {
+    use super::*;
+    use crate::grammar::parser::GrammarParser;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn test_parse_serialize_round_trip() {
+        // keyword direction = "north" | "south" | "east" | "west";
+        let kw_rule = GrammarRule {
+            name: "direction".to_string(),
+            pattern: Pattern::Choice(vec![
+                Pattern::Literal("north".to_string()),
+                Pattern::Literal("south".to_string()),
+                Pattern::Literal("east".to_string()),
+                Pattern::Literal("west".to_string()),
+            ]),
+            handler: None,
+            inherits: vec![],
+        };
+        let mut kw_rules = BTreeMap::new();
+        kw_rules.insert("direction".to_string(), kw_rule);
+
+        let mut keywords = BTreeMap::new();
+        keywords.insert("direction".to_string(), KeywordDef {
+            name: "direction".to_string(),
+            inherits: None,
+            rules: kw_rules,
+        });
+
+        let ir = GrammarIr {
+            package: "mygame".to_string(),
+            rules: BTreeMap::new(),
+            keywords,
+            imports: vec!["base".to_string()],
+        };
+
+        // Serialize
+        let pkg = GrammarSerializer::serialize_grammar_package(&ir);
+
+        // Verify
+        assert_eq!(pkg.version, 1);
+        assert_eq!(pkg.package, "mygame");
+        assert!(pkg.keywords.contains(&"north".to_string()));
+        assert!(pkg.keywords.contains(&"south".to_string()));
+    }
+
+    #[test]
+    fn test_parse_then_serialize() {
+        // Full parse → GrammarIr → GrammarPackage round-trip
+        let source = r#"
+            grammar mygame;
+            import base;
+            keyword move = "move";
+            keyword dir = "north" | "south" | "east" | "west";
+            rule player_move -> $move identifier int int handler("handleMove");
+            rule on_click inherits on_event -> "click" identifier handler("handleClick");
+        "#;
+
+        let mut parser = GrammarParser::new(source);
+        let ir = parser.parse().unwrap();
+
+        // Verify GrammarIr
+        assert_eq!(ir.package, "mygame");
+        assert_eq!(ir.imports, vec!["base"]);
+        assert!(ir.keywords.contains_key("move"));
+        assert!(ir.keywords.contains_key("dir"));
+        assert!(ir.rules.contains_key("player_move"));
+        assert!(ir.rules.contains_key("on_click"));
+        assert_eq!(ir.rules.get("on_click").unwrap().inherits, vec!["on_event"]);
+
+        // Serialize to GrammarPackage
+        let pkg = GrammarSerializer::serialize_grammar_package(&ir);
+
+        assert_eq!(pkg.version, 1);
+        assert_eq!(pkg.package, "mygame");
+        assert!(pkg.keywords.contains(&"move".to_string()));
+        assert!(pkg.keywords.contains(&"north".to_string()));
+        assert!(pkg.rules.contains_key("player_move"));
+        assert!(pkg.declarations.iter().any(|d| d.keyword == "on_click"));
+    }
+}
