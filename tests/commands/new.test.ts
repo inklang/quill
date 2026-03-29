@@ -12,7 +12,7 @@ const FIXTURES = join(__dirname, '../fixtures')
 
 describe('quill new', () => {
   afterEach(() => {
-    for (const name of ['ink.mobs', 'existing-pkg', 'my-project', 'hello-project', 'full-project', 'bad-template-project', 'conflict-project']) {
+    for (const name of ['ink.mobs', 'existing-pkg', 'my-project', 'hello-project', 'full-project', 'bad-template-project', 'conflict-project', 'script-project', 'lib-project']) {
       try { rmSync(join(FIXTURES, name), { recursive: true }) } catch {}
     }
   })
@@ -157,5 +157,29 @@ describe('quill new', () => {
       expect(e.stderr.toString()).toContain('mutually exclusive')
     }
     expect(threw).toBe(true)
+  })
+
+  it('scaffolds script project with --type=script', () => {
+    execSync(
+      `npx tsx ${CLI} new script-project --type=script --template=blank`,
+      { cwd: FIXTURES, encoding: 'utf8' }
+    )
+    const pkg = join(FIXTURES, 'script-project')
+    const manifest = TomlParser.read(join(pkg, 'ink-package.toml'))
+    expect(manifest.type).toBe('script')
+    expect(manifest.main).toBe('main')
+    expect(existsSync(join(pkg, 'scripts/main.ink'))).toBe(true)
+  })
+
+  it('scaffolds library project with --type=library', () => {
+    execSync(
+      `npx tsx ${CLI} new lib-project --type=library`,
+      { cwd: FIXTURES, encoding: 'utf8' }
+    )
+    const pkg = join(FIXTURES, 'lib-project')
+    const manifest = TomlParser.read(join(pkg, 'ink-package.toml'))
+    expect(manifest.type).toBe('library')
+    expect(manifest.main).toBeUndefined()
+    expect(existsSync(join(pkg, 'scripts'))).toBe(false)
   })
 })

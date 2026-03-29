@@ -64,6 +64,7 @@ async function promptTemplate(): Promise<Template> {
 export interface NewCommandOptions {
   isPackage: boolean;
   template?: string;
+  type?: 'script' | 'library';
 }
 
 export class NewCommand {
@@ -77,14 +78,14 @@ export class NewCommand {
     }
 
     if (opts.isPackage) {
-      await this.scaffoldPackage(name, targetDir);
+      await this.scaffoldPackage(name, targetDir, opts.type);
     } else {
       const template = (opts.template as Template | undefined) ?? await promptTemplate();
-      await this.scaffoldProject(name, targetDir, template);
+      await this.scaffoldProject(name, targetDir, template, opts.type);
     }
   }
 
-  private async scaffoldProject(name: string, targetDir: string, template: Template): Promise<void> {
+  private async scaffoldProject(name: string, targetDir: string, template: Template, type?: 'script' | 'library'): Promise<void> {
     fs.mkdirSync(targetDir, { recursive: true });
 
     // Resolve author from ~/.quillrc
@@ -96,10 +97,13 @@ export class NewCommand {
       }
     } catch {}
 
+    const packageType = type ?? 'script';
+
     const manifest: PackageManifest = {
       name,
       version: '0.1.0',
-      main: 'main',
+      type: packageType,
+      ...(packageType === 'script' ? { main: 'main' } : {}),
       dependencies: {},
       ...(author ? { author } : {}),
     };
@@ -109,18 +113,22 @@ export class NewCommand {
       TomlParser.write(manifest)
     );
 
-    fs.mkdirSync(path.join(targetDir, 'scripts'), { recursive: true });
-    fs.writeFileSync(
-      path.join(targetDir, 'scripts/main.ink'),
-      templateContent(name, template)
-    );
-
-    console.log(`Created project: ${name}/`);
-    console.log('  ink-package.toml');
-    console.log('  scripts/main.ink');
+    if (packageType === 'script') {
+      fs.mkdirSync(path.join(targetDir, 'scripts'), { recursive: true });
+      fs.writeFileSync(
+        path.join(targetDir, 'scripts/main.ink'),
+        templateContent(name, template)
+      );
+      console.log(`Created project: ${name}/`);
+      console.log('  ink-package.toml');
+      console.log('  scripts/main.ink');
+    } else {
+      console.log(`Created project: ${name}/`);
+      console.log('  ink-package.toml');
+    }
   }
 
-  private async scaffoldPackage(name: string, targetDir: string): Promise<void> {
+  private async scaffoldPackage(name: string, targetDir: string, type?: 'script' | 'library'): Promise<void> {
     fs.mkdirSync(targetDir, { recursive: true });
 
     const className = name
@@ -129,9 +137,12 @@ export class NewCommand {
       .map(s => s.charAt(0).toUpperCase() + s.slice(1))
       .join('');
 
+    const packageType = type;
+
     const manifest: PackageManifest = {
       name,
       version: '0.1.0',
+      ...(packageType ? { type: packageType } : {}),
       main: 'mod',
       dependencies: {},
       grammar: {

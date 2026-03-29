@@ -61,6 +61,7 @@ program
   .description('Scaffold a new project or grammar package')
   .option('--package', 'scaffold a publishable grammar package with runtime')
   .option('--template <name>', 'use a named template (blank, hello-world, full)')
+  .option('--type <type>', 'package type: script or library')
   .action(async (name, opts) => {
     if (opts.package && opts.template) {
       console.error('Error: --template and --package are mutually exclusive')
@@ -70,7 +71,11 @@ program
       console.error(`Error: Unknown template "${opts.template}". Available templates: blank, hello-world, full`)
       process.exit(1)
     }
-    await new NewCommand(projectDir).run(name, { isPackage: !!opts.package, template: opts.template })
+    if (opts.type && !['script', 'library'].includes(opts.type)) {
+      console.error(`Error: Unknown type "${opts.type}". Available types: script, library`)
+      process.exit(1)
+    }
+    await new NewCommand(projectDir).run(name, { isPackage: !!opts.package, template: opts.template, type: opts.type })
   })
 
 program.command('init').description('Initialize ink-package.toml in existing project').action(async () => {
