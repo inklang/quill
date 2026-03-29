@@ -8,7 +8,7 @@ use super::{PackageType, PackageManifest as Manifest};
 pub struct PackageInfo {
     pub name: String,
     pub version: String,
-    #[serde(rename = "package-type", default)]
+    #[serde(rename = "type", default)]
     pub package_type: Option<PackageType>,
     pub description: Option<String>,
     pub author: Option<String>,
@@ -66,7 +66,8 @@ pub struct TargetConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct PackageManifest {
-    pub info: PackageInfo,
+    #[serde(rename = "package")]
+    pub package: PackageInfo,
     #[serde(default)]
     pub dependencies: BTreeMap<String, String>,
     #[serde(default)]
