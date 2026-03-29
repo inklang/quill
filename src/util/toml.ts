@@ -36,6 +36,7 @@ export class TomlParser {
             jar: cfg.jar,
             jvmArgs: cfg['jvm-args'],
             env: cfg.env,
+            targetVersion: cfg['target-version'],
           }])
         )
       : undefined;
@@ -109,6 +110,7 @@ export class TomlParser {
           ...(cfg.jar ? { jar: cfg.jar } : {}),
           ...(cfg.jvmArgs?.length ? { 'jvm-args': cfg.jvmArgs } : {}),
           ...(cfg.env && Object.keys(cfg.env).length ? { env: cfg.env } : {}),
+          ...(cfg.targetVersion ? { 'target-version': cfg.targetVersion } : {}),
         };
       }
     }

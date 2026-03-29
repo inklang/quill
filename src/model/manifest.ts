@@ -13,6 +13,7 @@ export interface TargetConfig {
   jar?: string;  // For legacy external JAR projects
   jvmArgs?: string[];
   env?: Record<string, string>;
+  targetVersion?: string;  // semver range, e.g. ">=1.20.0 <1.23.0"
 }
 
 export interface BuildConfig {

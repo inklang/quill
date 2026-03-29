@@ -290,3 +290,119 @@ type = "banana"
     }
   });
 });
+
+describe('TomlParser with target-version', () => {
+  const tmpDir = os.tmpdir();
+
+  it('parses target-version from [targets] section', () => {
+    const content = `
+[package]
+name = "ink.paper"
+version = "0.2.0"
+
+[targets.paper]
+entry = "org.inklang.paper.PaperBridge"
+jar = "runtime/paper/build/libs/ink-paper-0.2.0.jar"
+target-version = ">=1.20.0 <1.23.0"
+`;
+    const filePath = path.join(tmpDir, 'quill-target-version-' + Date.now() + '.toml');
+    fs.writeFileSync(filePath, content);
+    try {
+      const manifest = TomlParser.read(filePath);
+      expect(manifest.targets).toBeDefined();
+      expect(manifest.targets!.paper.targetVersion).toBe('>=1.20.0 <1.23.0');
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  });
+
+  it('targetVersion is undefined when not specified', () => {
+    const content = `
+[package]
+name = "ink.paper"
+version = "0.2.0"
+
+[targets.paper]
+entry = "org.inklang.paper.PaperBridge"
+`;
+    const filePath = path.join(tmpDir, 'quill-no-target-version-' + Date.now() + '.toml');
+    fs.writeFileSync(filePath, content);
+    try {
+      const manifest = TomlParser.read(filePath);
+      expect(manifest.targets!.paper.targetVersion).toBeUndefined();
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  });
+
+  it('writes target-version to toml', () => {
+    const manifest: PackageManifest = {
+      name: 'ink.paper',
+      version: '0.2.0',
+      dependencies: {},
+      targets: {
+        paper: {
+          entry: 'org.inklang.paper.PaperBridge',
+          jar: 'runtime/paper.jar',
+          targetVersion: '>=1.20.0 <1.23.0',
+        },
+      },
+    };
+    const filePath = path.join(tmpDir, 'quill-write-target-version-' + Date.now() + '.toml');
+    const tomlString = TomlParser.write(manifest);
+    fs.writeFileSync(filePath, tomlString);
+    try {
+      const written = fs.readFileSync(filePath, 'utf-8');
+      expect(written).toContain('target-version = ">=1.20.0 <1.23.0"');
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  });
+
+  it('write omits target-version when undefined', () => {
+    const manifest: PackageManifest = {
+      name: 'ink.paper',
+      version: '0.2.0',
+      dependencies: {},
+      targets: {
+        paper: {
+          entry: 'org.inklang.paper.PaperBridge',
+        },
+      },
+    };
+    const filePath = path.join(tmpDir, 'quill-write-no-target-version-' + Date.now() + '.toml');
+    const tomlString = TomlParser.write(manifest);
+    fs.writeFileSync(filePath, tomlString);
+    try {
+      const written = fs.readFileSync(filePath, 'utf-8');
+      expect(written).not.toContain('target-version');
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  });
+
+  it('round-trips target-version through parse and write', () => {
+    const content = `
+[package]
+name = "ink.paper"
+version = "0.2.0"
+
+[targets.paper]
+entry = "org.inklang.paper.PaperBridge"
+target-version = ">=1.21.0"
+`;
+    const readPath = path.join(tmpDir, 'quill-rt-read-' + Date.now() + '.toml');
+    const writePath = path.join(tmpDir, 'quill-rt-write-' + Date.now() + '.toml');
+    fs.writeFileSync(readPath, content);
+    try {
+      const manifest = TomlParser.read(readPath);
+      const tomlString = TomlParser.write(manifest);
+      fs.writeFileSync(writePath, tomlString);
+      const reRead = TomlParser.read(writePath);
+      expect(reRead.targets!.paper.targetVersion).toBe('>=1.21.0');
+      fs.unlinkSync(writePath);
+    } finally {
+      fs.unlinkSync(readPath);
+    }
+  });
+});
