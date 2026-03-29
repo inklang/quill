@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { TomlParser } from '../../src/util/toml.js';
+import { PackageManifest } from '../../src/model/manifest.js';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -179,5 +180,113 @@ version = "1.0.0"
     expect(written).toContain('target = "paper"');
 
     fs.unlinkSync(filePath);
+  });
+});
+
+describe('TomlParser with package type', () => {
+  const tmpDir = os.tmpdir();
+
+  it('reads type = "library" from toml', () => {
+    const content = `
+[package]
+name = "my-lib"
+version = "1.0.0"
+type = "library"
+`;
+    const filePath = path.join(tmpDir, 'quill-type-lib-' + Date.now() + '.toml');
+    fs.writeFileSync(filePath, content);
+    try {
+      const manifest = TomlParser.read(filePath);
+      expect(manifest.type).toBe('library');
+      expect(manifest.main).toBeUndefined();
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  });
+
+  it('defaults type to "script" when absent', () => {
+    const content = `
+[package]
+name = "my-script"
+version = "1.0.0"
+main = "mod"
+`;
+    const filePath = path.join(tmpDir, 'quill-type-default-' + Date.now() + '.toml');
+    fs.writeFileSync(filePath, content);
+    try {
+      const manifest = TomlParser.read(filePath);
+      expect(manifest.type).toBe('script');
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  });
+
+  it('defaults main to "main" for script type when main absent from toml', () => {
+    const content = `
+[package]
+name = "my-script"
+version = "1.0.0"
+`;
+    const filePath = path.join(tmpDir, 'quill-type-script-nomain-' + Date.now() + '.toml');
+    fs.writeFileSync(filePath, content);
+    try {
+      const manifest = TomlParser.read(filePath);
+      expect(manifest.type).toBe('script');
+      expect(manifest.main).toBe('main');
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  });
+
+  it('throws on invalid type value', () => {
+    const content = `
+[package]
+name = "bad-pkg"
+version = "1.0.0"
+type = "banana"
+`;
+    const filePath = path.join(tmpDir, 'quill-type-invalid-' + Date.now() + '.toml');
+    fs.writeFileSync(filePath, content);
+    try {
+      expect(() => TomlParser.read(filePath)).toThrow(/invalid.*type/i);
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  });
+
+  it('writes type = "library" to toml', () => {
+    const manifest: PackageManifest = {
+      name: 'my-lib',
+      version: '1.0.0',
+      type: 'library',
+      dependencies: {},
+    };
+    const filePath = path.join(tmpDir, 'quill-write-type-lib-' + Date.now() + '.toml');
+    const tomlString = TomlParser.write(manifest);
+    fs.writeFileSync(filePath, tomlString);
+    try {
+      const written = fs.readFileSync(filePath, 'utf-8');
+      expect(written).toContain('type = "library"');
+    } finally {
+      fs.unlinkSync(filePath);
+    }
+  });
+
+  it('write omits main when undefined', () => {
+    const manifest: PackageManifest = {
+      name: 'my-lib',
+      version: '1.0.0',
+      type: 'library',
+      dependencies: {},
+    };
+    const filePath = path.join(tmpDir, 'quill-write-no-main-' + Date.now() + '.toml');
+    const tomlString = TomlParser.write(manifest);
+    fs.writeFileSync(filePath, tomlString);
+    try {
+      const written = fs.readFileSync(filePath, 'utf-8');
+      expect(written).not.toContain('main');
+    } finally {
+      fs.unlinkSync(filePath);
+    }
   });
 });

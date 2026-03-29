@@ -15,6 +15,13 @@ export class TomlParser {
     if (!pkg) throw new Error('ink-package.toml is missing [package] section');
     if (!pkg.name) throw new Error('ink-package.toml is missing package.name');
 
+    // Parse and validate type field
+    const VALID_TYPES = ['script', 'library'] as const;
+    let packageType: 'script' | 'library' = pkg.type ?? 'script';
+    if (!VALID_TYPES.includes(packageType as any)) {
+      throw new Error(`invalid package type: "${pkg.type}". Must be "script" or "library".`);
+    }
+
     const grammarSection = (data as any).grammar;
     const buildSection = (data as any).build;
     const runtimeSection = (data as any).runtime;
@@ -38,11 +45,12 @@ export class TomlParser {
       return {
         name: pkg.name,
         version: pkg.version ?? '0.0.0',
+        type: packageType,
         description: pkg.description,
         author: pkg.author,
         homepage: pkg.homepage,
         repository: pkg.repository,
-        main: pkg.main ?? pkg.entry ?? 'main',
+        main: packageType === 'script' ? (pkg.main ?? pkg.entry ?? 'main') : (pkg.main ?? pkg.entry),
         dependencies: (data.dependencies as Record<string, string>) ?? {},
         grammar: grammarSection ? { entry: grammarSection.entry, output: grammarSection.output } : undefined,
         build: buildSection ? { compiler: buildSection.compiler, target: buildSection.target, targetVersion: buildSection['target-version'] } : undefined,
@@ -55,11 +63,12 @@ export class TomlParser {
     return {
       name: pkg.name,
       version: pkg.version ?? '0.0.0',
+      type: packageType,
       description: pkg.description,
       author: pkg.author,
       homepage: pkg.homepage,
       repository: pkg.repository,
-      main: pkg.main ?? pkg.entry ?? 'main',
+      main: packageType === 'script' ? (pkg.main ?? pkg.entry ?? 'main') : (pkg.main ?? pkg.entry),
       target: pkg.target,
       dependencies: (data.dependencies as Record<string, string>) ?? {},
       grammar: grammarSection ? { entry: grammarSection.entry, output: grammarSection.output } : undefined,
@@ -75,7 +84,8 @@ export class TomlParser {
       package: {
         name: manifest.name,
         version: manifest.version,
-        main: manifest.main,
+        ...(manifest.type ? { type: manifest.type } : {}),
+        ...(manifest.main ? { main: manifest.main } : {}),
         ...(manifest.description ? { description: manifest.description } : {}),
         ...(manifest.author ? { author: manifest.author } : {}),
         ...(manifest.homepage ? { homepage: manifest.homepage } : {}),
