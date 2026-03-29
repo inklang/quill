@@ -4,6 +4,7 @@ import { FileUtils } from '../util/fs.js';
 import { Lockfile, LockfileEntry } from '../lockfile.js';
 import { VulnerabilitiesScanner } from '../audit/vulnerabilities.js';
 import { ChecksumVerifier } from '../audit/checksum.js';
+import { resolveTransitive, type ResolvedPkg } from '../resolve.js';
 import { Spinner } from '../ui/spinner.js';
 import { cli } from '../ui/colors.js';
 import path from 'path';
@@ -47,28 +48,39 @@ export class AddCommand {
     const index = await client.fetchIndex();
     spinner.succeed('Registry index fetched.');
 
-    const pkgVersion = client.findBestMatch(index, pkgName, rangeStr);
+    // Resolve transitive dependency tree
+    let resolved: Map<string, ResolvedPkg>;
+    try {
+      resolved = resolveTransitive(index, { [pkgName]: rangeStr });
+    } catch (err: any) {
+      console.log(`No version of ${pkgName} satisfies ${version ?? 'any version'}`);
+      return;
+    }
 
-    if (!pkgVersion) {
+    const directPkg = resolved.get(pkgName);
+    if (!directPkg) {
       console.log(`No version of ${pkgName} satisfies ${version ?? 'any version'}`);
       return;
     }
 
     // Dry run — show what would happen and exit
     if (opts.dryRun) {
-      console.log(`[dry-run] Would install ${pkgName}@${pkgVersion.version}`);
-      if (opts.verbose) {
-        console.log(`  URL: ${pkgVersion.url}`);
-        if (pkgVersion.checksum) console.log(`  Checksum: ${pkgVersion.checksum}`);
+      console.log(`[dry-run] Would install the following packages:`);
+      for (const pkg of resolved.values()) {
+        console.log(`  ${pkg.name}@${pkg.version}`);
+        if (opts.verbose) {
+          console.log(`    URL: ${pkg.url}`);
+          if (pkg.checksum) console.log(`    Checksum: ${pkg.checksum}`);
+        }
       }
       return;
     }
 
-    // Target validation
+    // Target validation (direct package only)
     const projectTarget = manifest.target;
-    if (projectTarget && pkgVersion.targets && !pkgVersion.targets.includes(projectTarget)) {
-      console.error(`Error: Package ${pkgName}@${pkgVersion.version} does not support target "${projectTarget}".`);
-      console.error(`       Available targets: ${pkgVersion.targets.join(', ')}`);
+    if (projectTarget && directPkg.targets && !directPkg.targets.includes(projectTarget)) {
+      console.error(`Error: Package ${pkgName}@${directPkg.version} does not support target "${projectTarget}".`);
+      console.error(`       Available targets: ${directPkg.targets.join(', ')}`);
       return;
     }
 
@@ -80,99 +92,133 @@ export class AddCommand {
       return;
     }
 
-    console.log(`Installing ${pkgName} v${pkgVersion.version}...`);
-    if (opts.verbose) console.log(`  URL: ${pkgVersion.url}`);
-
-    const cacheDir = path.join(this.projectDir, '.quill-cache');
-    FileUtils.ensureDir(cacheDir);
-    const tarball = path.join(cacheDir, `${pkgName.replace('/', '-')}-${pkgVersion.version}.tar.gz`);
-
-    spinner.start(`Downloading ${pkgName}@${pkgVersion.version}...`);
-    await FileUtils.downloadFile(pkgVersion.url, tarball);
-    spinner.succeed(`Downloaded ${pkgName}@${pkgVersion.version}.`);
-
-    // Compute checksum and verify
-    spinner.start('Verifying checksum...');
-    const computedChecksum = await this.computeTarballSha256(tarball)
-    if (opts.verbose) console.log(`  Computed: ${computedChecksum}`);
-    if (pkgVersion.checksum) {
-      if (opts.verbose) console.log(`  Expected: ${pkgVersion.checksum}`);
-      const verifier = new ChecksumVerifier()
-      const result = await verifier.verify(tarball, pkgVersion.checksum)
-      if (!result.valid) {
-        spinner.fail(`Checksum mismatch for ${pkgName}@${pkgVersion.version}`);
-        console.error(`  Expected (registry): ${pkgVersion.checksum}`);
-        console.error(`  Computed:            ${computedChecksum}`);
-        console.error('  Package may have been tampered with. DO NOT INSTALL.');
-        fs.rmSync(tarball, { force: true })
-        process.exit(2)
-      }
-    }
-    spinner.succeed('Checksum verified.');
-
-    // Vulnerability audit
-    if (!opts.force) {
-      const auditResult = await this.runVulnerabilityAudit(pkgName, pkgVersion.version, pkgVersion.dependencies, opts)
+    // Vulnerability audit (direct package only)
+    const client2 = new RegistryClient();
+    const directVersion = client2.findBestMatch(index, pkgName, rangeStr);
+    if (!opts.force && directVersion) {
+      const auditResult = await this.runVulnerabilityAudit(pkgName, directVersion.version, directVersion.dependencies, opts)
       if (auditResult.blocked) {
         console.error('Aborted.')
-        fs.rmSync(tarball, { force: true })
         process.exit(1)
       }
     }
 
-    // Extract only the matching target subfolder
-    const extractDir = path.join(cacheDir, `extract-${pkgName.replace('/', '-')}-${pkgVersion.version}`);
-    spinner.start('Extracting package...');
-    await FileUtils.extractTarGz(tarball, extractDir);
+    // Download + extract all resolved packages
+    const cacheDir = path.join(this.projectDir, '.quill-cache');
+    FileUtils.ensureDir(cacheDir);
 
-    let targetDir: string | null = null;
-
-    if (projectTarget) {
-      // Find the target subfolder by reading ink-manifest.json from each subdirectory
-      const entries = fs.readdirSync(extractDir);
-      for (const entry of entries) {
-        const manifestPath = path.join(extractDir, entry, 'ink-manifest.json');
-        if (fs.existsSync(manifestPath)) {
-          const pkgManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-          if (pkgManifest.target === projectTarget) {
-            targetDir = entry;
-            break;
-          }
-        }
+    // Collect packages that need to be installed (skip already-present ones)
+    const toInstall: ResolvedPkg[] = [];
+    for (const pkg of resolved.values()) {
+      const dir = path.join(packagesDir, pkg.name.replace('/', '-'));
+      if (!fs.existsSync(dir)) {
+        toInstall.push(pkg);
+      } else {
+        if (opts.verbose) console.log(`  ${pkg.name}@${pkg.version} already installed, skipping.`);
       }
-
-      if (!targetDir) {
-        spinner.fail(`Could not find variant for target "${projectTarget}" in package tarball.`);
-        fs.rmSync(extractDir, { recursive: true, force: true });
-        return;
-      }
-
-      // Copy only the matching target subfolder contents to packages dir
-      const srcDir = path.join(extractDir, targetDir);
-      FileUtils.ensureDir(pkgDir);
-      for (const file of fs.readdirSync(srcDir)) {
-        const srcFile = path.join(srcDir, file);
-        const destFile = path.join(pkgDir, file);
-        if (fs.statSync(srcFile).isDirectory()) {
-          FileUtils.ensureDir(destFile);
-          fs.cpSync(srcFile, destFile, { recursive: true });
-        } else {
-          fs.copyFileSync(srcFile, destFile);
-        }
-      }
-      fs.rmSync(extractDir, { recursive: true, force: true });
-    } else {
-      // No project target — extract everything (backward compat)
-      await FileUtils.extractTarGz(tarball, pkgDir);
-      fs.rmSync(extractDir, { recursive: true, force: true });
     }
 
-    // Update ink-package.toml
-    const versionStr = opts.saveExact ? pkgVersion.version : `^${pkgVersion.version}`;
+    if (toInstall.length > 0) {
+      console.log(`Installing ${toInstall.length} package(s): ${toInstall.map(p => `${p.name}@${p.version}`).join(', ')}`);
+
+      // Download in batches of 3
+      const BATCH = 3;
+      for (let i = 0; i < toInstall.length; i += BATCH) {
+        const batch = toInstall.slice(i, i + BATCH);
+        await Promise.all(batch.map(async (pkg) => {
+          const tarball = path.join(cacheDir, `${pkg.name.replace('/', '-')}-${pkg.version}.tar.gz`);
+          if (opts.verbose) console.log(`  Downloading ${pkg.name}@${pkg.version} from ${pkg.url}`);
+          await FileUtils.downloadFile(pkg.url, tarball);
+        }));
+      }
+
+      // Verify checksums sequentially — abort all on failure
+      for (const pkg of toInstall) {
+        const tarball = path.join(cacheDir, `${pkg.name.replace('/', '-')}-${pkg.version}.tar.gz`);
+        spinner.start(`Verifying checksum for ${pkg.name}@${pkg.version}...`);
+        const computedChecksum = await this.computeTarballSha256(tarball);
+        if (pkg.checksum) {
+          if (opts.verbose) console.log(`  Computed: ${computedChecksum}, Expected: ${pkg.checksum}`);
+          const verifier = new ChecksumVerifier();
+          const result = await verifier.verify(tarball, pkg.checksum);
+          if (!result.valid) {
+            spinner.fail(`Checksum mismatch for ${pkg.name}@${pkg.version}`);
+            console.error(`  Expected (registry): ${pkg.checksum}`);
+            console.error(`  Computed:            ${computedChecksum}`);
+            console.error('  Package may have been tampered with. DO NOT INSTALL.');
+            // Clean up all downloaded tarballs for this add
+            for (const p of toInstall) {
+              const tb = path.join(cacheDir, `${p.name.replace('/', '-')}-${p.version}.tar.gz`);
+              fs.rmSync(tb, { force: true });
+            }
+            process.exit(2);
+          }
+        }
+        spinner.succeed(`Checksum verified for ${pkg.name}@${pkg.version}.`);
+      }
+
+      // Extract + install each package
+      for (const pkg of toInstall) {
+        const tarball = path.join(cacheDir, `${pkg.name.replace('/', '-')}-${pkg.version}.tar.gz`);
+        const pkgDestDir = path.join(packagesDir, pkg.name.replace('/', '-'));
+        const extractDir = path.join(cacheDir, `extract-${pkg.name.replace('/', '-')}-${pkg.version}`);
+
+        spinner.start(`Extracting ${pkg.name}@${pkg.version}...`);
+        await FileUtils.extractTarGz(tarball, extractDir);
+        spinner.succeed(`Extracted ${pkg.name}@${pkg.version}.`);
+
+        let targetDir: string | null = null;
+
+        if (projectTarget) {
+          const entries = fs.readdirSync(extractDir);
+          for (const entry of entries) {
+            const manifestPath = path.join(extractDir, entry, 'ink-manifest.json');
+            if (fs.existsSync(manifestPath)) {
+              const pkgManifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+              if (pkgManifest.target === projectTarget) {
+                targetDir = entry;
+                break;
+              }
+            }
+          }
+
+          if (!targetDir) {
+            spinner.fail(`Could not find variant for target "${projectTarget}" in ${pkg.name} tarball.`);
+            fs.rmSync(extractDir, { recursive: true, force: true });
+            continue;
+          }
+
+          const srcDir = path.join(extractDir, targetDir);
+          FileUtils.ensureDir(pkgDestDir);
+          for (const file of fs.readdirSync(srcDir)) {
+            const srcFile = path.join(srcDir, file);
+            const destFile = path.join(pkgDestDir, file);
+            if (fs.statSync(srcFile).isDirectory()) {
+              FileUtils.ensureDir(destFile);
+              fs.cpSync(srcFile, destFile, { recursive: true });
+            } else {
+              fs.copyFileSync(srcFile, destFile);
+            }
+          }
+          fs.rmSync(extractDir, { recursive: true, force: true });
+        } else {
+          FileUtils.ensureDir(pkgDestDir);
+          for (const entry of fs.readdirSync(extractDir)) {
+            const src = path.join(extractDir, entry);
+            const dest = path.join(pkgDestDir, entry);
+            fs.cpSync(src, dest, { recursive: true });
+          }
+          fs.rmSync(extractDir, { recursive: true, force: true });
+        }
+      }
+    }
+
+    // Update ink-package.toml (only the direct package)
+    const versionStr = opts.saveExact ? directPkg.version : `^${directPkg.version}`;
     const updated = { ...manifest, dependencies: { ...manifest.dependencies, [pkgName]: versionStr } };
     fs.writeFileSync(inkPackageTomlPath, TomlParser.write(updated));
 
-    // Update quill.lock
+    // Update quill.lock with ALL resolved packages
     const lockfilePath = path.join(this.projectDir, 'quill.lock')
     let lockedPkgs: Record<string, LockfileEntry> = {}
     if (fs.existsSync(lockfilePath)) {
@@ -183,11 +229,13 @@ export class AddCommand {
         }
       } catch {}
     }
-    lockedPkgs[`${pkgName}@${pkgVersion.version}`] = new LockfileEntry(pkgVersion.version, pkgVersion.url)
+    for (const pkg of resolved.values()) {
+      lockedPkgs[`${pkg.name}@${pkg.version}`] = new LockfileEntry(pkg.version, pkg.url, pkg.depKeys)
+    }
     const lockfile = new Lockfile(new RegistryClient().registryUrl, lockedPkgs)
     lockfile.write(lockfilePath)
 
-    console.log(`${cli.success('✓')} Installed ${pkgName} v${pkgVersion.version} → packages/${pkgName.replace('/', '-')}`);
+    console.log(`${cli.success('✓')} Installed ${pkgName} v${directPkg.version} → packages/${pkgName.replace('/', '-')}`);
   }
 
   private async computeTarballSha256(tarballPath: string): Promise<string> {
