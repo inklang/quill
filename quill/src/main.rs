@@ -1,7 +1,8 @@
 mod cli;
 mod context;
-mod error;
-mod manifest;
+pub mod error;
+pub mod manifest;
+pub mod registry;
 
 mod commands;
 

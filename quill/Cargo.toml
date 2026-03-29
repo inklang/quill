@@ -28,6 +28,9 @@ thiserror = "1.0"
 semver = "1.0"
 rand = "0.8"
 futures-util = "0.3"
+urlencoding = "2.1"
+hex = "0.4"
+pkcs8 = "0.10"
 
 [dev-dependencies]
 tempfile = "3.12"
