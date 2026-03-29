@@ -9,8 +9,40 @@ use crate::context::Context;
 use crate::error::{QuillError, Result};
 use crate::grammar::{parser::GrammarParser, GrammarIr};
 use crate::grammar::merge::merge_grammars;
-use crate::util::compiler::compile_ink;
+use crate::grammar::serializer::GrammarSerializer;
+use crate::printing_press::inklang::grammar::merge_grammars as pp_merge_grammars;
 use crate::util::target_version::resolve_target_version;
+
+/// Compile an .ink source file using an explicit MergedGrammar.
+fn compile_ink_with_grammar(
+    source: &Path,
+    output: &Path,
+    grammar: &crate::printing_press::inklang::grammar::MergedGrammar,
+) -> Result<()> {
+    let source_text = std::fs::read_to_string(source)
+        .map_err(|e| QuillError::io_error(format!("failed to read source '{}'", source.display()), e))?;
+
+    let name = source
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("main");
+
+    let script = crate::printing_press::compile_with_grammar(&source_text, name, Some(grammar))
+        .map_err(|e| QuillError::CompilerFailed {
+            script: source.to_string_lossy().into(),
+            stderr: e.display(),
+        })?;
+
+    let json = serde_json::to_string(&script)
+        .map_err(|e| QuillError::RegistryAuth {
+            message: format!("failed to serialize compiled output: {}", e),
+        })?;
+
+    std::fs::write(output, json)
+        .map_err(|e| QuillError::io_error(format!("failed to write output '{}'", output.display()), e))?;
+
+    Ok(())
+}
 
 pub struct Build {
     pub output: Option<PathBuf>,
@@ -82,6 +114,10 @@ impl Command for Build {
             merge_grammars(&base_grammar, &dependency_grammars)?
         };
 
+        // Serialize GrammarIr to GrammarPackage, then build MergedGrammar in-memory
+        let grammar_pkg = GrammarSerializer::serialize_grammar_package(&merged_grammar);
+        let grammar_for_compiler = pp_merge_grammars(vec![grammar_pkg]);
+
         // 4. Find dirty .ink files
         let cache_dir = get_cache_dir()?;
         let cache_manifest_path = cache_dir.join("manifest.json");
@@ -124,7 +160,7 @@ impl Command for Build {
             fs::create_dir_all(output_file.parent().unwrap_or(&output_dir))
                 .map_err(|e| QuillError::io_error("failed to create output directory", e))?;
 
-            compile_ink(source_file, &output_file)?;
+            compile_ink_with_grammar(source_file, &output_file, &grammar_for_compiler)?;
 
             // Update cache
             let hash = crate::cache::dirty::hash_file(source_file)?;
