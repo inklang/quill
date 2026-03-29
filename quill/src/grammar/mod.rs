@@ -38,7 +38,9 @@ pub enum Pattern {
     Choice(Vec<Pattern>),
     Sequence(Vec<Pattern>),
     Repeat(Box<Pattern>),
+    Repeat1(Box<Pattern>),      // one or more (+)
     Optional(Box<Pattern>),
+    Ref(String),                // $keyword reference
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
