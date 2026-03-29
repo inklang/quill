@@ -6,11 +6,7 @@ use crate::commands::Command;
 use crate::context::Context;
 use crate::error::{QuillError, Result};
 
-pub struct Audit {
-    pub fix: bool,
-    pub severities: Vec<String>,
-    pub no_ignore: bool,
-}
+pub struct Audit;
 
 #[async_trait]
 impl Command for Audit {

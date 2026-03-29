@@ -108,8 +108,8 @@ pub async fn execute(ctx: &Context, command: &crate::cli::Commands) -> Result<()
         crate::cli::Commands::Logout { registry } => {
             Logout { registry: registry.clone() }.execute(ctx).await
         }
-        crate::cli::Commands::Audit { fix, severities, no_ignore } => {
-            Audit { fix: *fix, severities: severities.clone(), no_ignore: *no_ignore }.execute(ctx).await
+        crate::cli::Commands::Audit { .. } => {
+            Audit.execute(ctx).await
         }
         crate::cli::Commands::Doctor => {
             Doctor.execute(ctx).await
