@@ -298,6 +298,8 @@ mod round_trip_tests {
         assert_eq!(pkg.package, "mygame");
         assert!(pkg.keywords.contains(&"north".to_string()));
         assert!(pkg.keywords.contains(&"south".to_string()));
+        assert!(pkg.keywords.contains(&"east".to_string()));
+        assert!(pkg.keywords.contains(&"west".to_string()));
     }
 
     #[test]
@@ -331,7 +333,13 @@ mod round_trip_tests {
         assert_eq!(pkg.package, "mygame");
         assert!(pkg.keywords.contains(&"move".to_string()));
         assert!(pkg.keywords.contains(&"north".to_string()));
+        assert!(pkg.keywords.contains(&"south".to_string()));
+        assert!(pkg.keywords.contains(&"east".to_string()));
+        assert!(pkg.keywords.contains(&"west".to_string()));
         assert!(pkg.rules.contains_key("player_move"));
+        let player_move_entry = pkg.rules.get("player_move").unwrap();
+        assert_eq!(player_move_entry.handler, Some("handleMove".to_string()));
+        assert!(matches!(player_move_entry.rule, Rule::Seq { .. }));
         assert!(pkg.declarations.iter().any(|d| d.keyword == "on_click"));
     }
 }
