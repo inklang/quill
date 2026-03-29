@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { PackageManifest } from '../../src/model/manifest'
+import { defaultManifest, type PackageManifest } from '../../src/model/manifest'
 
 describe('PackageManifest', () => {
   it('has optional target field', () => {
@@ -22,4 +22,21 @@ describe('PackageManifest', () => {
     }
     expect(manifest.target).toBeUndefined()
   })
+
+  it('defaultManifest includes type: "script"', () => {
+    const m = defaultManifest('test-pkg');
+    expect(m.type).toBe('script');
+    expect(m.main).toBe('mod');
+  });
+
+  it('library manifest can omit main', () => {
+    const m: PackageManifest = {
+      name: 'ink.mobs',
+      version: '0.1.0',
+      type: 'library',
+      dependencies: {},
+    };
+    expect(m.type).toBe('library');
+    expect(m.main).toBeUndefined();
+  });
 })

@@ -30,11 +30,12 @@ export interface ServerConfig {
 export interface PackageManifest {
   name: string;
   version: string;
+  type?: 'script' | 'library';
   description?: string;
   author?: string;
   homepage?: string;
   repository?: string;
-  main: string;
+  main?: string;
   dependencies: Record<string, string>;
   target?: string;
   grammar?: GrammarConfig;
@@ -48,6 +49,7 @@ export function defaultManifest(name: string): PackageManifest {
   return {
     name,
     version: '0.1.0',
+    type: 'script',
     main: 'mod',
     dependencies: {},
     targets: {},
