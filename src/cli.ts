@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import { NewCommand } from './commands/new.js';
-import { InitCommand } from './commands/init.js';
 import { AddCommand } from './commands/add.js';
 import { RemoveCommand } from './commands/remove.js';
 import { InstallCommand } from './commands/install.js';
@@ -25,6 +24,7 @@ import { WhyCommand } from './commands/why.js'
 import { TestCommand } from './commands/test.js'
 import { AuditCommand } from './commands/audit.js'
 import { PackCommand } from './commands/pack.js'
+import { SetupCommand } from './commands/setup.js'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 
@@ -57,6 +57,13 @@ program
   .option('-v, --verbose', 'Show detailed information (URLs, checksums, resolution)');
 
 program
+  .command('setup [path]')
+  .description('Interactive wizard to set up a Paper server for Ink')
+  .action(async (path?: string) => {
+    await new SetupCommand(path ?? './server').run()
+  })
+
+program
   .command('new <name>')
   .description('Scaffold a new project or grammar package')
   .option('--package', 'scaffold a publishable grammar package with runtime')
@@ -78,9 +85,6 @@ program
     await new NewCommand(projectDir).run(name, { isPackage: !!opts.package, template: opts.template, type: opts.type })
   })
 
-program.command('init').description('Initialize ink-package.toml in existing project').action(async () => {
-  await new InitCommand(projectDir).run();
-});
 
 program.command('add <pkg>').description('Install a package').option('--force', 'Skip audit confirmation').option('-y, --yes', 'Skip all confirmation prompts').option('--save-exact', 'Save exact version instead of semver range').option('--dry-run', 'Show what would be installed without downloading').action(async (pkg, opts) => {
   requireProject()
@@ -302,7 +306,7 @@ program
   })
 
 const COMMAND_GROUPS = [
-  { title: 'Project',      names: ['new', 'init'] },
+  { title: 'Project',      names: ['setup', 'new', 'init'] },
   { title: 'Dependencies', names: ['add', 'remove', 'install', 'update', 'outdated', 'why', 'ls', 'clean'] },
   { title: 'Build',        names: ['build', 'check', 'watch', 'run', 'pack'] },
   { title: 'Cache',        names: ['cache'] },
