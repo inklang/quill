@@ -3,7 +3,8 @@ import fs from 'fs';
 export class LockfileEntry {
   constructor(
     public readonly version: string,
-    public readonly resolutionSource: string
+    public readonly resolutionSource: string,
+    public readonly dependencies: string[] = []
   ) {}
 }
 
@@ -19,7 +20,7 @@ export class Lockfile {
     const packages: Record<string, LockfileEntry> = {};
 
     for (const [key, val] of Object.entries<Record<string, any>>((data as any).packages ?? {})) {
-      packages[key] = new LockfileEntry(val.version, val.resolutionSource);
+      packages[key] = new LockfileEntry(val.version, val.resolutionSource, val.dependencies ?? []);
     }
 
     return new Lockfile(data.registry ?? 'https://lectern.inklang.org', packages);
@@ -31,12 +32,13 @@ export class Lockfile {
       packages[key] = {
         version: entry.version,
         resolutionSource: entry.resolutionSource,
+        dependencies: entry.dependencies,
       };
     }
 
     const content = JSON.stringify(
       {
-        version: 1,
+        version: 2,
         registry: this.registry,
         packages,
       },

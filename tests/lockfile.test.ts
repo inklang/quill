@@ -36,4 +36,47 @@ describe('Lockfile', () => {
 
     fs.unlinkSync(filePath);
   });
+
+  it('writes and reads entries with dependencies array', () => {
+    const filePath = path.join(tmpDir, 'quill-lockfile-deps-test.lock');
+    const entry = new LockfileEntry('1.2.0', 'https://example.com/pkg.tar.gz', ['dep-a@1.0.0', 'dep-b@2.0.0'])
+    const lockfile = new Lockfile('https://registry.example.com', { 'pkg@1.2.0': entry })
+    lockfile.write(filePath)
+
+    const read = Lockfile.read(filePath)
+    expect(read.packages['pkg@1.2.0'].version).toBe('1.2.0')
+    expect(read.packages['pkg@1.2.0'].resolutionSource).toBe('https://example.com/pkg.tar.gz')
+    expect(read.packages['pkg@1.2.0'].dependencies).toEqual(['dep-a@1.0.0', 'dep-b@2.0.0'])
+
+    fs.unlinkSync(filePath)
+  })
+
+  it('defaults dependencies to empty array when not present in file', () => {
+    const filePath = path.join(tmpDir, 'quill-lockfile-v1-test.lock');
+    const v1Content = JSON.stringify({
+      version: 1,
+      registry: 'https://registry.example.com',
+      packages: {
+        'pkg@1.0.0': { version: '1.0.0', resolutionSource: 'https://example.com/pkg.tar.gz' }
+      }
+    }, null, 2)
+    fs.writeFileSync(filePath, v1Content)
+
+    const read = Lockfile.read(filePath)
+    expect(read.packages['pkg@1.0.0'].dependencies).toEqual([])
+
+    fs.unlinkSync(filePath)
+  })
+
+  it('writes version 2 format', () => {
+    const filePath = path.join(tmpDir, 'quill-lockfile-v2-test.lock');
+    const entry = new LockfileEntry('1.0.0', 'https://example.com/pkg.tar.gz')
+    const lockfile = new Lockfile('https://registry.example.com', { 'pkg@1.0.0': entry })
+    lockfile.write(filePath)
+
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+    expect(raw.version).toBe(2)
+
+    fs.unlinkSync(filePath)
+  })
 });
