@@ -2,8 +2,7 @@ import { TomlParser } from '../util/toml.js';
 import { RegistryClient } from '../registry/client.js';
 import { FileUtils } from '../util/fs.js';
 import { Lockfile, LockfileEntry } from '../lockfile.js';
-import { Semver } from '../model/semver.js';
-import { SemverRange } from '../model/semver.js';
+import { resolveTransitive, type ResolvedPkg } from '../resolve.js';
 import { Spinner } from '../ui/spinner.js';
 import { cli } from '../ui/colors.js';
 import path from 'path';
@@ -12,15 +11,6 @@ import fs from 'fs';
 export interface InstallOptions {
   dryRun?: boolean
   verbose?: boolean
-}
-
-interface ResolvedPkg {
-  name: string
-  range: string
-  version: string
-  url: string
-  targets?: string[]
-  installed: boolean
 }
 
 export class InstallCommand {
@@ -45,91 +35,56 @@ export class InstallCommand {
     const packagesDir = path.join(this.projectDir, 'packages');
     const cacheDir = path.join(this.projectDir, '.quill-cache');
 
-    // Read existing lockfile
-    let existingLockfile: Map<string, LockfileEntry> = new Map();
-    if (fs.existsSync(lockfilePath)) {
-      try {
-        const existing = Lockfile.read(lockfilePath);
-        for (const [k, v] of Object.entries(existing.packages)) {
-          existingLockfile.set(k, v);
-        }
-      } catch {}
-    }
-
-    // Resolve all deps first (sequential for correctness)
+    // Resolve the full transitive dependency tree
     console.log(`Resolving dependencies for ${manifest.name}...`);
-    const resolved: ResolvedPkg[] = [];
-
-    for (const [depName, depRange] of Object.entries(manifest.dependencies)) {
-      let pkgVersion = null;
-      const semverRange = new SemverRange(depRange);
-
-      // Try locked version first
-      for (const [lockKey, lockEntry] of existingLockfile.entries()) {
-        if (!lockKey.startsWith(`${depName}@`)) continue;
-        const lockedVer = lockEntry.version;
-        try {
-          const parsed = Semver.parse(lockedVer);
-          if (semverRange.matches(parsed)) {
-            const fresh = client.findBestMatch(index, depName, depRange);
-            if (fresh && fresh.version === lockedVer) {
-              pkgVersion = fresh;
-            }
-          }
-        } catch {}
-      }
-
-      // Fall back to latest satisfying version
-      if (!pkgVersion) {
-        pkgVersion = client.findBestMatch(index, depName, depRange);
-      }
-
-      if (!pkgVersion) {
-        console.error(`ERROR: No version of ${depName} satisfies ${depRange}`);
-        return;
-      }
-
-      // Target validation
-      const projectTarget = manifest.target;
-      if (projectTarget && pkgVersion.targets && !pkgVersion.targets.includes(projectTarget)) {
-        console.error(`Error: Package ${depName}@${pkgVersion.version} does not support target "${projectTarget}".`);
-        console.error(`       Available targets: ${pkgVersion.targets.join(', ')}`);
-        return;
-      }
-
-      const pkgDir = path.join(packagesDir, depName.replace('/', '-'));
-      resolved.push({
-        name: depName,
-        range: depRange,
-        version: pkgVersion.version,
-        url: pkgVersion.url,
-        targets: pkgVersion.targets,
-        installed: fs.existsSync(pkgDir),
-      });
-
-      if (opts.verbose) {
-        console.log(`  ${cli.bold(depName)}@^${pkgVersion.version} ${fs.existsSync(pkgDir) ? cli.muted('(already installed)') : ''}`);
-        console.log(`    URL: ${pkgVersion.url}`);
-      }
+    let resolved: Map<string, ResolvedPkg>;
+    try {
+      resolved = resolveTransitive(index, manifest.dependencies);
+    } catch (err: any) {
+      console.error(`ERROR: ${err.message}`);
+      return;
     }
 
-    if (resolved.length === 0) {
+    if (resolved.size === 0) {
       console.log('No dependencies to install.');
+      // Still write an empty lockfile
+      const lockfile = new Lockfile(client.registryUrl, {});
+      lockfile.write(lockfilePath);
+      return;
+    }
+
+    if (opts.verbose) {
+      for (const pkg of resolved.values()) {
+        const pkgDir = path.join(packagesDir, pkg.name.replace('/', '-'));
+        const already = fs.existsSync(pkgDir) ? cli.muted('(already installed)') : '';
+        console.log(`  ${cli.bold(pkg.name)}@${pkg.version} ${already}`);
+        console.log(`    URL: ${pkg.url}`);
+        console.log(`    Range: ${pkg.range}`);
+      }
     }
 
     // Dry run — show what would happen and exit
     if (opts.dryRun) {
-      console.log(`\n[dry-run] Would install ${resolved.filter(r => !r.installed).length} new package(s):`);
-      for (const r of resolved) {
-        if (!r.installed) {
-          console.log(`  ${r.name}@${r.version}`);
-        }
+      const toInstall = [...resolved.values()].filter(pkg => {
+        const pkgDir = path.join(packagesDir, pkg.name.replace('/', '-'));
+        return !fs.existsSync(pkgDir);
+      });
+      console.log(`\n[dry-run] Would install ${toInstall.length} package(s):`);
+      for (const pkg of resolved.values()) {
+        const pkgDir = path.join(packagesDir, pkg.name.replace('/', '-'));
+        const marker = fs.existsSync(pkgDir) ? cli.muted(' (already installed)') : '';
+        console.log(`  ${pkg.name}@${pkg.version}${marker}`);
       }
       return;
     }
 
+    // Collect packages that need downloading (skip already-present ones)
+    const toDownload = [...resolved.values()].filter(pkg => {
+      const pkgDir = path.join(packagesDir, pkg.name.replace('/', '-'));
+      return !fs.existsSync(pkgDir);
+    });
+
     // Download packages in parallel (concurrency limit of 3)
-    const toDownload = resolved.filter(r => !r.installed);
     if (toDownload.length > 0) {
       console.log(`Installing ${toDownload.length} package(s)...`);
       FileUtils.ensureDir(cacheDir);
@@ -147,11 +102,11 @@ export class InstallCommand {
       }
     }
 
-    // Extract all packages sequentially (safe to parallelize but keeping simple)
-    for (const pkg of resolved) {
-      if (pkg.installed) continue;
-
+    // Extract all packages that need installing
+    for (const pkg of resolved.values()) {
       const pkgDir = path.join(packagesDir, pkg.name.replace('/', '-'));
+      if (fs.existsSync(pkgDir)) continue;
+
       const tarball = path.join(cacheDir, `${pkg.name.replace('/', '-')}-${pkg.version}.tar.gz`);
       const extractDir = path.join(cacheDir, `extract-${pkg.name.replace('/', '-')}-${pkg.version}`);
 
@@ -174,9 +129,9 @@ export class InstallCommand {
         }
 
         if (!targetDir) {
-          console.error(`Error: Could not find variant for target "${projectTarget}" in package tarball.`);
+          console.error(`Error: Could not find variant for target "${projectTarget}" in ${pkg.name} tarball.`);
           fs.rmSync(extractDir, { recursive: true, force: true });
-          return;
+          continue;
         }
 
         const srcDir = path.join(extractDir, targetDir);
@@ -193,22 +148,26 @@ export class InstallCommand {
         }
         fs.rmSync(extractDir, { recursive: true, force: true });
       } else {
-        await FileUtils.extractTarGz(tarball, pkgDir);
+        FileUtils.ensureDir(pkgDir);
+        for (const entry of fs.readdirSync(extractDir)) {
+          const src = path.join(extractDir, entry);
+          const dest = path.join(pkgDir, entry);
+          fs.cpSync(src, dest, { recursive: true });
+        }
         fs.rmSync(extractDir, { recursive: true, force: true });
       }
     }
 
-    // Write lockfile
+    // Write lockfile with ALL resolved packages and their dependency graph
     const lockedPkgs: Record<string, LockfileEntry> = {};
-    for (const r of resolved) {
-      lockedPkgs[`${r.name}@${r.version}`] = new LockfileEntry(r.version, r.url);
+    for (const pkg of resolved.values()) {
+      lockedPkgs[`${pkg.name}@${pkg.version}`] = new LockfileEntry(pkg.version, pkg.url, pkg.depKeys);
     }
     const lockfile = new Lockfile(client.registryUrl, lockedPkgs);
     lockfile.write(lockfilePath);
 
-    const newCount = resolved.filter(r => !r.installed).length;
-    if (newCount > 0) {
-      console.log(`${cli.success('✓')} Installed ${newCount} new package(s).`);
+    if (toDownload.length > 0) {
+      console.log(`${cli.success('✓')} Installed ${toDownload.length} package(s).`);
     } else {
       console.log('All packages already installed.');
     }
