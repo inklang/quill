@@ -25,6 +25,18 @@ quill setup [path]
 
 - `path` defaults to `./server` (configurable via prompt)
 - Alias: none needed (the command is self-explanatory)
+- Registered in the **Project** command group in `COMMAND_GROUPS`, before `init` (since it's the recommended entry point for new users)
+- Non-interactive mode (`--yes` flag) is deferred to a future iteration
+
+## Shared Server Setup Module
+
+`quill run` already performs server directory creation, Ink JAR download, and eula.txt setup (see `RunCommand` in `src/commands/run.ts`, lines 219-263). Rather than duplicating this logic, `quill setup` reuses it by extracting the shared pieces into `src/util/server-setup.ts`:
+
+- `ensureServerDir(serverDir: string)` — creates directory, writes eula.txt, creates plugins/
+- `downloadInkJar(pluginsDir: string)` — downloads latest Ink JAR from GitHub releases
+- `resolveServerDir(projectDir, manifest)` — already exported from run.ts, will move to the shared module
+
+Both `quill setup` and `quill run` import from this shared module. Bug fixes and changes to the setup flow only need to happen in one place.
 
 ## Flow
 
@@ -49,25 +61,27 @@ Prompt: "Download Ink plugin? [Y/n]"
 | `plugins/Ink*.jar` exists | Skip. "Ink plugin already installed." |
 | Not found | Download latest from GitHub releases → `plugins/Ink.jar` |
 
-Source: latest release asset from the ink repository's GitHub releases. The JAR filename includes version for future update detection.
+Source: `https://github.com/inklang/ink/releases/latest/download/Ink.jar` — same direct download URL that `RunCommand` already uses. No API call needed.
 
 ### 3. Project Initialization
 
 Prompt: "Initialize Ink scripts project? [Y/n]"
 
-Runs equivalent of `quill init` in the server directory:
-- Creates `ink-package.toml` with basic metadata
-- Creates `scripts/` directory
-- Sets `[deploy] server = "."` in ink-package.toml so `quill build` knows to copy output to `./plugins/Ink/plugins/`
-
-The `[deploy]` section in ink-package.toml:
+Does NOT shell out to `quill init`. Creates the ink-package.toml inline with the server path configured:
 
 ```toml
-[deploy]
-server = "."
+[package]
+name = "server"
+version = "0.1.0"
+main = "main"
+
+[server]
+path = "."
 ```
 
-This tells `quill build` to copy compiled output into `./plugins/Ink/plugins/<package-name>/` after building.
+This reuses the existing `[server]` section in `PackageManifest` (`manifest.server.path`) — the same field that `RunCommand.resolveServerDir()` reads. No new TOML sections needed.
+
+Also creates an empty `scripts/` directory. The existing `InitCommand` does not create `scripts/` or set `[server]`, so setup handles this inline.
 
 ### 4. Summary
 
@@ -103,30 +117,28 @@ The quill project lives inside the server directory. Admins `cd` into their serv
 
 ## Modified `quill build` Behavior
 
-When `[deploy] server` is set in ink-package.toml:
+When `manifest.server?.path` is set (which `quill setup` configures):
 
 1. Build proceeds as normal (compile grammar, compile scripts)
-2. After build, copy output to `<server-path>/plugins/Ink/plugins/<package-name>/`
-3. Copy includes: `ink-manifest.json`, `grammar.ir.json`, `scripts/*.inkc`
+2. After build, call `deployScripts(serverDir, projectDir)` — the same function `quill run` already uses (exported from `src/commands/run.ts`, line 41)
+3. This clears `plugins/Ink/scripts/` and copies `dist/scripts/*.inkc` into it
 
-When `[deploy] server` is NOT set, `quill build` works as it does today (outputs to `dist/`).
+When `manifest.server?.path` is NOT set, `quill build` works as it does today (outputs to `dist/` only).
+
+**Error cases:**
+- Server dir does not exist → fail with "Server directory not found. Run `quill setup` first."
+- `plugins/Ink/` does not exist (Ink plugin absent) → create the directory tree and continue with a warning
+- Stale files → `deployScripts` already clears the entire scripts directory before copying, so stale files are handled
 
 This means existing Ink developers are unaffected — the deploy behavior only activates when setup has configured a server path.
-
-## Ink JAR Download
-
-- Fetch from GitHub releases API: `https://api.github.com/repos/<owner>/<repo>/releases/latest`
-- Find the asset matching `Ink-*.jar` or `ink-bukkit-*.jar`
-- Download to `<server>/plugins/Ink.jar`
-- Future: support `quill setup --ink-version <version>` for pinning
 
 ## Idempotency
 
 `quill setup` is safe to re-run:
 - If server dir exists and is valid, skip creation
 - If Ink JAR exists, skip download
-- If ink-package.toml exists, skip init (but offer to update deploy path)
-- If `[deploy] server` already set, confirm it's still valid
+- If ink-package.toml exists, skip init (but offer to update server path if missing)
+- If `[server] path` already set, confirm it's still valid
 
 ## Out of Scope
 
@@ -136,17 +148,20 @@ This means existing Ink developers are unaffected — the deploy behavior only a
 - Server kit presets or curated package bundles
 - Live reload or hot-deploy (admin uses `/ink reload` in-game)
 - Remote server deployment (SSH, FTP, etc.) — local filesystem only
+- Non-interactive / `--yes` mode (deferred to future iteration)
 
 ## Commands Affected
 
 | Command | Change |
 |---------|--------|
 | `quill setup` (new) | Interactive wizard for server setup |
-| `quill build` | Add deploy step when `[deploy] server` is configured |
-| `quill init` | No changes (setup wraps it) |
+| `quill build` | Add deploy step when `manifest.server.path` is configured |
+| `quill init` | No changes (setup creates TOML inline, doesn't call init) |
+| `quill run` | Refactor: extract setup helpers into shared `src/util/server-setup.ts` |
 
 ## Dependencies
 
-- GitHub releases API for Ink JAR download
-- Existing `quill init`, `quill add`, `quill build` commands (wrapped, not duplicated)
-- Inquirer.js or similar for interactive prompts (check if already a dependency)
+- **`@clack/prompts`** for interactive prompts — lightweight, beautiful terminal UI designed specifically for wizards. Small dependency footprint, good Windows terminal support, consistent with the wizard UX pattern.
+- `inklang/ink` GitHub releases for Ink JAR download (same source as `quill run`)
+- Shared `src/util/server-setup.ts` module (extracted from `RunCommand`)
+- Existing `deployScripts()` function from `src/commands/run.ts`
