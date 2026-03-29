@@ -1430,7 +1430,7 @@ mod round_trip_tests {
         };
 
         // Serialize
-        let pkg = serialize_grammar_package(&ir);
+        let pkg = GrammarSerializer::serialize_grammar_package(&ir);
 
         // Verify
         assert_eq!(pkg.version, 1);
@@ -1464,7 +1464,7 @@ mod round_trip_tests {
         assert_eq!(ir.rules.get("on_click").unwrap().inherits, vec!["on_event"]);
 
         // Serialize to GrammarPackage
-        let pkg = serialize_grammar_package(&ir);
+        let pkg = GrammarSerializer::serialize_grammar_package(&ir);
 
         assert_eq!(pkg.version, 1);
         assert_eq!(pkg.package, "mygame");
