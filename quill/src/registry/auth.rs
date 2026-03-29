@@ -153,6 +153,8 @@ impl AuthContext {
 
     /// Make the authentication header value
     /// Format: "Ink-v1 keyId=...,ts=...,sig=..."
+    //
+    // Note: Timestamp-only replay protection. Matches existing Ink-v1 protocol.
     pub fn make_auth_header(&self) -> String {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

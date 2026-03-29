@@ -23,7 +23,7 @@ impl RegistryIndex {
             for (full_name, pkg) in &self.packages {
                 if let Some(short) = full_name.strip_prefix('@') {
                     if let Some(rest) = short.strip_prefix(|c| c != '/') {
-                        if rest == name || rest == format!("@{}", name) {
+                        if rest == name {
                             return Some(pkg);
                         }
                     }

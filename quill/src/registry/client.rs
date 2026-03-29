@@ -6,7 +6,6 @@ use std::path::Path;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use reqwest::multipart;
 use tokio::fs::File as TokioFile;
 use tokio::io::AsyncWriteExt;
 
@@ -66,7 +65,7 @@ impl RegistryClient {
             // Successfully decompressed
             let index: RegistryIndex = serde_json::from_slice(&decompressed).map_err(|e| {
                 QuillError::RegistryAuth {
-                    message: format!("failed to parse registry index: {}", e),
+                    message: format!("failed to parse gzip-compressed registry index: {}", e),
                 }
             })?;
             return Ok(index);
@@ -75,7 +74,7 @@ impl RegistryClient {
         // Not gzip compressed, try plain JSON
         let index: RegistryIndex = serde_json::from_slice(&bytes).map_err(|e| {
             QuillError::RegistryAuth {
-                message: format!("failed to parse registry index: {}", e),
+                message: format!("failed to parse registry index JSON: {}", e),
             }
         })?;
 
@@ -160,9 +159,9 @@ impl RegistryClient {
         name: &str,
         version: &str,
         tarball: &Path,
-        description: &str,
-        readme: Option<&str>,
-        targets: Option<&[String]>,
+        _description: &str,
+        _readme: Option<&str>,
+        _targets: Option<&[String]>,
         auth: &AuthContext,
     ) -> Result<()> {
         let url = format!("{}/api/packages/{}/{}", self.base_url, name, version);
@@ -187,41 +186,16 @@ impl RegistryClient {
                 message: format!("failed to finish compression: {}", e),
             })?;
 
-        // Build multipart form
+        // Send raw gzip body per spec: PUT /api/packages/{name}/{version}
+        // Content-Type: application/vnd.ink-publish+gzip
         let auth_header = auth.make_auth_header();
-
-        let form = multipart::Form::new()
-            .part("tarball", multipart::Part::bytes(compressed)
-                .mime_str("application/gzip")
-                .map_err(|e| QuillError::RegistryAuth {
-                    message: format!("failed to set mime type: {}", e),
-                })?
-                .file_name("package.tar.gz"))
-            .text("description", description.to_string());
-
-        let form = if let Some(readme) = readme {
-            form.text("readme", readme.to_string())
-        } else {
-            form
-        };
-
-        let form = if let Some(targets) = targets {
-            let targets_json = serde_json::to_string(targets).map_err(|e| {
-                QuillError::RegistryAuth {
-                    message: format!("failed to serialize targets: {}", e),
-                }
-            })?;
-            form.text("targets", targets_json)
-        } else {
-            form
-        };
 
         let response = self
             .client
             .put(&url)
             .header("Authorization", auth_header)
             .header("Content-Type", "application/vnd.ink-publish+gzip")
-            .multipart(form)
+            .body(compressed)
             .send()
             .await
             .map_err(|e| QuillError::RegistryRequest {
