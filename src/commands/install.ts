@@ -5,12 +5,15 @@ import { Lockfile, LockfileEntry } from '../lockfile.js';
 import { resolveTransitive, type ResolvedPkg } from '../resolve.js';
 import { Spinner } from '../ui/spinner.js';
 import { cli } from '../ui/colors.js';
+import { resolveTargetVersion, checkTargetVersionCompatibility } from '../util/target-version.js';
+import type { PackageManifest } from '../model/manifest.js';
 import path from 'path';
 import fs from 'fs';
 
 export interface InstallOptions {
   dryRun?: boolean
   verbose?: boolean
+  targetVersion?: string
 }
 
 export class InstallCommand {
@@ -156,6 +159,50 @@ export class InstallCommand {
         }
         fs.rmSync(extractDir, { recursive: true, force: true });
       }
+    }
+
+    // Check target-version compatibility against installed packages
+    const activeTarget = manifest.target ?? manifest.build?.target ?? 'default';
+    const targetVersion = resolveTargetVersion({
+      cliFlag: opts.targetVersion,
+      buildConfig: manifest.build?.targetVersion,
+      serverPaper: manifest.server?.paper,
+      activeTarget,
+    });
+
+    if (targetVersion) {
+      const depManifests = new Map<string, PackageManifest>();
+      const depKeys = Object.keys(manifest.dependencies);
+      for (const dirName of fs.readdirSync(packagesDir)) {
+        const tomlPath = path.join(packagesDir, dirName, 'ink-package.toml');
+        if (!fs.existsSync(tomlPath)) continue;
+        const matchedKey = depKeys.find(k => k.replace(/\//g, '-') === dirName);
+        if (!matchedKey) continue;
+        try {
+          depManifests.set(matchedKey, TomlParser.read(tomlPath));
+        } catch {
+          // Skip packages with unparseable manifests
+        }
+      }
+      const issues = checkTargetVersionCompatibility(manifest, depManifests, activeTarget, targetVersion);
+      for (const issue of issues) {
+        if (issue.type === 'error') {
+          console.error(`Error: ${issue.package}: ${issue.message}`);
+        } else {
+          console.warn(`Warning: ${issue.package}: ${issue.message}`);
+        }
+      }
+      const errors = issues.filter(i => i.type === 'error');
+      if (errors.length > 0) {
+        process.exit(1);
+      }
+    }
+
+    // Warn about deprecated [build].target-version if per-target version also exists
+    const activeTargetConfig = manifest.targets?.[activeTarget];
+    if (manifest.build?.targetVersion && activeTargetConfig?.targetVersion) {
+      console.warn(`Warning: Both [build].target-version and [targets.${activeTarget}].target-version are set.`);
+      console.warn('  The per-target value takes precedence. [build].target-version is deprecated.');
     }
 
     // Write lockfile with ALL resolved packages and their dependency graph

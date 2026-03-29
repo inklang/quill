@@ -14,11 +14,12 @@ import { pathToFileURL } from 'url'
 import { scanUsingDeclarations } from '../util/using-scan.js'
 import { mergeGrammars } from '../grammar/merge.js'
 import { resolveCompiler } from '../util/compiler.js'
+import { resolveTargetVersion, checkTargetVersionCompatibility } from '../util/target-version.js'
 
 export class InkBuildCommand {
   constructor(private projectDir: string, private target?: string) {}
 
-  async run(opts: { full?: boolean } = {}): Promise<void> {
+  async run(opts: { full?: boolean; targetVersion?: string } = {}): Promise<void> {
     const manifest = TomlParser.read(join(this.projectDir, 'ink-package.toml'));
 
     // Tracks the runtime JAR hash for cache invalidation
@@ -39,6 +40,36 @@ export class InkBuildCommand {
     }
 
     const targetConfig = targets[targetName];
+
+    // Resolve target version and check dependency compatibility
+    const targetVersion = resolveTargetVersion({
+      cliFlag: opts.targetVersion,
+      buildConfig: manifest.build?.targetVersion,
+      serverPaper: manifest.server?.paper,
+      activeTarget: targetName,
+    });
+
+    if (targetVersion) {
+      const depManifests = this.loadDepManifests();
+      const issues = checkTargetVersionCompatibility(manifest, depManifests, targetName, targetVersion);
+      for (const issue of issues) {
+        if (issue.type === 'error') {
+          console.error(`Error: ${issue.package}: ${issue.message}`);
+        } else {
+          console.warn(`Warning: ${issue.package}: ${issue.message}`);
+        }
+      }
+      const errors = issues.filter(i => i.type === 'error');
+      if (errors.length > 0) {
+        process.exit(1);
+      }
+    }
+
+    // Warn about deprecated [build].target-version if per-target version also exists
+    if (manifest.build?.targetVersion && targetConfig?.targetVersion) {
+      console.warn(`Warning: Both [build].target-version and [targets.${targetName}].target-version are set.`);
+      console.warn('  The per-target value takes precedence. [build].target-version is deprecated.');
+    }
 
     // Determine dist directory and whether to include target in output paths
     // For legacy projects (runtime at root, not runtime/<target>/), use dist/ root
@@ -334,6 +365,30 @@ export class InkBuildCommand {
         }
       }
     }
+  }
+
+  private loadDepManifests(): Map<string, import('../model/manifest.js').PackageManifest> {
+    const depManifests = new Map<string, import('../model/manifest.js').PackageManifest>();
+    const packagesDir = join(this.projectDir, 'packages');
+    if (!existsSync(packagesDir)) return depManifests;
+
+    const manifest = TomlParser.read(join(this.projectDir, 'ink-package.toml'));
+    const depKeys = Object.keys(manifest.dependencies);
+
+    for (const dirName of readdirSync(packagesDir)) {
+      const tomlPath = join(packagesDir, dirName, 'ink-package.toml');
+      if (!existsSync(tomlPath)) continue;
+
+      const matchedKey = depKeys.find(k => k.replace(/\//g, '-') === dirName);
+      if (!matchedKey) continue;
+
+      try {
+        depManifests.set(matchedKey, TomlParser.read(tomlPath));
+      } catch {
+        // Skip packages with unparseable manifests
+      }
+    }
+    return depManifests;
   }
 
   /**

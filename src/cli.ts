@@ -96,9 +96,9 @@ program.command('remove <pkg>').description('Uninstall a package').alias('uninst
   await new RemoveCommand(projectDir).run(pkg);
 });
 
-program.command('install').description('Install all dependencies from ink-package.toml').option('--dry-run', 'Show what would be installed without downloading').action(async (opts) => {
+program.command('install').description('Install all dependencies from ink-package.toml').option('--dry-run', 'Show what would be installed without downloading').option('--target-version <version>', 'Target platform version for compatibility checks').action(async (opts) => {
   requireProject()
-  await new InstallCommand(projectDir).run({ dryRun: !!opts.dryRun, verbose: !!program.opts().verbose })
+  await new InstallCommand(projectDir).run({ dryRun: !!opts.dryRun, verbose: !!program.opts().verbose, targetVersion: opts.targetVersion })
 });
 
 program
@@ -124,10 +124,11 @@ program
   .command('build')
   .description('Compile grammar and/or Ink scripts')
   .option('-F, --full', 'Force full recompilation of all scripts')
+  .option('--target-version <version>', 'Target platform version for compatibility checks')
   .action(async (opts) => {
     requireProject()
     const cmd = new InkBuildCommand(process.cwd())
-    await cmd.run({ full: !!opts.full })
+    await cmd.run({ full: !!opts.full, targetVersion: opts.targetVersion })
   })
 
 // cache-info as standalone command (alias: cache)
