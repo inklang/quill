@@ -136,7 +136,7 @@ mod tests {
             ],
         );
         assert!(result.is_ok());
-        assert!(result.unwrap().keywords.contains_key("a::kw1"));
+        assert!(result.as_ref().unwrap().keywords.contains_key("a::kw1"));
         assert!(result.unwrap().keywords.contains_key("b::kw1"));
     }
 }

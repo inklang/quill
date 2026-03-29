@@ -105,8 +105,10 @@ pub fn hash_file(path: &Path) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
     use std::io::Write;
     use tempfile::TempDir;
+    use crate::cache::{CacheEntry, CacheManifest};
 
     #[test]
     fn test_hash_file() {

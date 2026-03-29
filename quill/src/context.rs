@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use toml;
 use crate::error::{QuillError, Result};
 
 pub use crate::manifest::{PackageManifest, Lockfile, LockedPackage};
@@ -30,17 +31,15 @@ impl Context {
     }
 
     pub fn load_manifest(&mut self) -> Result<()> {
-        let manifest_path = self.project_dir.join("ink-manifest.toml");
+        let manifest_path = self.project_dir.join("ink-package.toml");
         if !manifest_path.exists() {
-            return Ok(());
+            return Err(QuillError::ManifestNotFound { path: manifest_path });
         }
-
         let content = std::fs::read_to_string(&manifest_path)
-            .map_err(|e| QuillError::io_error("failed to read manifest", e))?;
-
-        // Placeholder - will parse properly in later chunk
-        let _ = content;
-        self.manifest = None;
+            .map_err(|e| QuillError::io_error("read manifest", e))?;
+        let manifest: PackageManifest = toml::from_str(&content)
+            .map_err(|e| QuillError::ManifestParse { path: manifest_path, source: e })?;
+        self.manifest = Some(manifest);
         Ok(())
     }
 
