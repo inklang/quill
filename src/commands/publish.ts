@@ -43,6 +43,30 @@ export class PublishCommand {
       process.exit(1)
     }
 
+    // Validate entry point for script packages
+    const packageType = manifest.type ?? 'script';
+    if (packageType === 'script') {
+      const mainName = manifest.main;
+      if (!mainName) {
+        console.error('Script packages must have a "main" entry point in ink-package.toml');
+        process.exit(1);
+      }
+      // Check compiled output exists
+      const hasTargets = manifest.targets && Object.keys(manifest.targets).length > 0;
+      let mainPath: string;
+      if (hasTargets) {
+        const targetName = manifest.target ?? Object.keys(manifest.targets!)[0];
+        mainPath = join(distDir, targetName, 'scripts', `${mainName}.inkc`);
+      } else {
+        mainPath = join(distDir, 'scripts', `${mainName}.inkc`);
+      }
+      if (!existsSync(mainPath)) {
+        console.error(`Entry point not found: ${mainPath}`);
+        console.error('Script packages require a compiled entry point. Check your "main" field in ink-package.toml.');
+        process.exit(1);
+      }
+    }
+
     const tarballPath = join(tmpdir(), `${manifest.name}-${manifest.version}.tar.gz`)
     await FileUtils.packTarGz(this.projectDir, tarballPath, ['ink-package.toml', 'dist'])
 
@@ -57,9 +81,7 @@ export class PublishCommand {
       ? [manifest.target, ...Object.keys(manifest.targets ?? {})]
       : Object.keys(manifest.targets ?? {});
 
-    // Build full slug from username and package name
-    const slug = `${rc.username}/${manifest.name}`
-    const url = `${client.registryUrl}/api/packages/${slug}/${manifest.version}`
+    const url = `${client.registryUrl}/api/packages/${manifest.name}/${manifest.version}`
 
     // Use custom content-type to avoid Vercel blocking multipart/form-data PUTs
     const headers: Record<string, string> = {
@@ -67,15 +89,18 @@ export class PublishCommand {
       'Content-Type': 'application/vnd.ink-publish+gzip',
       'Content-Length': tarball.length.toString(),
     }
+    headers['X-Package-Type'] = manifest.type ?? 'script'
     if (description) headers['X-Package-Description'] = description
     if (readme) headers['X-Package-Readme'] = readme
     if (targetsToSend.length > 0) headers['X-Package-Targets'] = JSON.stringify([...new Set(targetsToSend)])
 
+    console.log('PUT', url)
     const res = await fetch(url, {
       method: 'PUT',
       headers,
       body: tarball,
     })
+    console.log('Response:', res.status, res.headers.get('content-type'))
 
     if (!res.ok) {
       const body = await res.text()
