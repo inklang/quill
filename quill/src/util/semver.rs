@@ -152,7 +152,6 @@ impl SemverRange {
                     version.major == base.major
                         && version.minor == base.minor
                         && version.patch >= base.patch
-                        && version.minor < base.minor + 1
                 }
             }
 
