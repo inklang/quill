@@ -99,6 +99,37 @@ pub enum Commands {
         target: Option<String>,
     },
 
+    /// Compile a single .ink file or batch compile a directory
+    Compile {
+        /// Source file (single-file mode)
+        #[arg(value_name = "INPUT")]
+        input: Option<String>,
+
+        /// Output file (single-file mode)
+        #[arg(short, long, value_name = "OUTPUT")]
+        output: Option<std::path::PathBuf>,
+
+        /// Directory containing .ink source files (batch mode)
+        #[arg(long, value_name = "DIR")]
+        sources: Option<String>,
+
+        /// Output directory (batch mode)
+        #[arg(long, value_name = "DIR")]
+        out: Option<String>,
+
+        /// Grammar IR file (.json) to use for compilation
+        #[arg(long, value_name = "PATH")]
+        grammar: Option<String>,
+
+        /// Pretty-print JSON output
+        #[arg(short, long)]
+        debug: bool,
+
+        /// Compile a single entry point with import resolution
+        #[arg(long)]
+        entry: bool,
+    },
+
     /// Clean build artifacts
     Clean,
 

@@ -10,6 +10,7 @@ pub mod cache_info;
 pub mod cache_ls;
 pub mod clean;
 pub mod completions;
+pub mod compile;
 pub mod doctor;
 pub mod info;
 pub mod install;
@@ -34,6 +35,7 @@ pub use cache_info::CacheInfo;
 pub use cache_ls::CacheLs;
 pub use clean::Clean;
 pub use completions::Completions;
+pub use compile::Compile;
 pub use doctor::Doctor;
 pub use info::Info;
 pub use install::Install;
@@ -83,6 +85,9 @@ pub async fn execute(ctx: &Context, command: &crate::cli::Commands) -> Result<()
         }
         crate::cli::Commands::Build { output, target } => {
             Build { output: output.clone(), target: target.clone() }.execute(ctx).await
+        }
+        crate::cli::Commands::Compile { input, output, sources, out, grammar, debug, entry } => {
+            Compile { input: input.clone(), output: output.clone(), sources: sources.clone(), out: out.clone(), grammar: grammar.clone(), debug: *debug, entry: *entry }.execute(ctx).await
         }
         crate::cli::Commands::Clean => {
             Clean.execute(ctx).await

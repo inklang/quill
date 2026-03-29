@@ -9,10 +9,8 @@ use crate::context::Context;
 use crate::error::{QuillError, Result};
 use crate::grammar::{parser::GrammarParser, GrammarIr};
 use crate::grammar::merge::merge_grammars;
-use crate::util::compiler::{compile_file, resolve_compiler};
-use crate::util::fs as quill_fs;
+use crate::util::compiler::compile_ink;
 use crate::util::target_version::resolve_target_version;
-use crate::util::using_scan;
 
 pub struct Build {
     pub output: Option<PathBuf>,
@@ -106,8 +104,6 @@ impl Command for Build {
         );
 
         // 5. Compile dirty files via compiler
-        let compiler = resolve_compiler()?;
-
         let output_dir = self.output.clone()
             .unwrap_or_else(|| ctx.project_dir.join("target").join("ink"));
 
@@ -128,7 +124,7 @@ impl Command for Build {
             fs::create_dir_all(output_file.parent().unwrap_or(&output_dir))
                 .map_err(|e| QuillError::io_error("failed to create output directory", e))?;
 
-            compile_file(&compiler, source_file, &output_file)?;
+            compile_ink(source_file, &output_file)?;
 
             // Update cache
             let hash = crate::cache::dirty::hash_file(source_file)?;
