@@ -3,6 +3,8 @@ mod context;
 pub mod error;
 pub mod manifest;
 pub mod registry;
+pub mod resolve;
+pub mod util;
 
 mod commands;
 
