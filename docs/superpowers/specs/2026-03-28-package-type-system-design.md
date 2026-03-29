@@ -15,7 +15,7 @@ Add a first-class `type` field distinguishing `script` and `library` packages. T
 
 ### ink-package.toml
 
-A new required field `type` under `[package]`:
+A new field `type` under `[package]`:
 
 ```toml
 [package]
@@ -25,30 +25,46 @@ type = "script"    # "script" | "library"
 description = "..."
 author = "..."
 license = "..."
-main = "mod"       # required when type = "script"
+main = "main"      # required when type = "script"
 ```
 
 Rules:
-- `type` is required for publish. If missing, quill warns and defaults to `script`.
-- When `type = "script"`, `main` must be present. Publish fails with an error if absent.
-- When `type = "library"`, `main` is optional.
+- `type` is optional. If missing from ink-package.toml, quill defaults to `script` and does **not** warn (existing packages without the field should work without noise).
+- When `type = "script"`, the `main` entry point must be present **on disk** — quill validates that the compiled output file exists (e.g. `dist/scripts/<main>.inkc`). Publish fails with an error if absent.
+- When `type = "library"`, `main` is optional and ignored if present.
+
+### TypeScript model changes
+
+`PackageManifest` interface (in `src/model/manifest.ts`) gains:
+
+```typescript
+type?: 'script' | 'library'  // optional, defaults to 'script' at read time
+main?: string                 // change from required to optional
+```
+
+`TomlParser.read` applies defaults:
+- `type` defaults to `'script'` if absent from TOML.
+- `main` defaults to `'main'` if absent and `type` is `'script'`. No default for `type = 'library'`.
+
+`RegistryPackageVersion` (in `src/registry/client.ts`) gains `package_type: string`.
 
 ### Quill CLI
 
-#### `quill new [path] --type=script|library`
+#### `quill new <name> --type=script|library`
 
-- `path` is optional, defaults to current directory.
+- `<name>` is a required positional argument (matches existing interface).
 - `--type` is optional, defaults to `script`.
 - Creates directory structure and writes `ink-package.toml` with type pre-filled.
 - Scaffolding differs by type:
-  - **script**: creates `scripts/main.ink` with a hello-world starter, sets `main = "mod"` in toml.
-  - **library**: creates empty `scripts/` directory, omits `main` field.
+  - **script**: creates `scripts/main.ink` with a hello-world starter, sets `main = "main"` in toml.
+  - **library**: no `scripts/` directory created, no `main` field in toml.
+- `--type` is independent of the existing `--package` flag. `--package` controls the scaffolding template (package vs project), `--type` controls the package type field. They can be combined freely.
 
 #### `quill publish`
 
-- Reads `type` from `ink-package.toml`.
-- If `type = "script"`, validates that `main` exists. Exits with error if missing.
-- Sends `package_type` as part of the publish payload to the registry.
+- Reads `type` from `ink-package.toml` (defaults to `script` if absent).
+- If `type = "script"`, validates that `main` exists as a compiled file on disk. Exits with error if missing.
+- Sends `package_type` as an HTTP header `X-Package-Type` in the publish request (consistent with existing `X-Package-Targets` header pattern).
 
 ### Registry / Database
 
@@ -62,8 +78,23 @@ ALTER TABLE package_versions ADD CONSTRAINT valid_package_type
 
 - `NOT NULL` with default `'script'` so existing rows migrate cleanly.
 - Check constraint enforces only valid values.
-- Publish API (`PUT /api/packages/:name/:version`) accepts `package_type` in form data and stores it.
-- Search API (`GET /api/search`) gains optional `type` query parameter for filtering.
+- A package's displayed type is determined by its **latest version**. If versions disagree, the latest version wins. This matches how the search already deduplicates to the latest version per package.
+
+#### Publish API
+
+`PUT /api/packages/:name/:version` reads `X-Package-Type` header and stores it in the `package_type` column. If the header is absent, defaults to `'script'`.
+
+The `PackageVersion` interface (in `src/lib/db.ts`) gains `package_type: string`.
+
+#### Search API
+
+`GET /api/search` gains optional `type` query parameter for filtering. Filtering is applied as a **pre-filter** in the Supabase queries (added to the WHERE clause of both FTS and vector search queries) so it doesn't waste retrieval budget.
+
+The `SearchResult` type (in `src/lib/search.ts`) gains `package_type: string`.
+
+#### Index API
+
+`GET /index.json` includes `package_type` in each version entry so CLI consumers can filter locally.
 
 ### Lectern Website
 
