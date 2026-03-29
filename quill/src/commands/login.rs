@@ -1,8 +1,8 @@
 use async_trait::async_trait;
-use std::io::{Read, Write};
-use std::net::TcpListener;
-use std::path::PathBuf;
-use std::time::Duration;
+
+use tokio::net::TcpListener;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::time::{timeout, Duration as TokioDuration};
 
 use crate::commands::Command;
 use crate::context::Context;
@@ -25,10 +25,11 @@ impl Command for Login {
 
         // 2. Spawn TcpListener on random port
         let listener = TcpListener::bind("127.0.0.1:0")
+            .await
             .map_err(|e| QuillError::io_error("failed to bind TCP listener", e))?;
-        let port = listener.local_addr()
-            .map_err(|e| QuillError::io_error("failed to get local address", e))?
-            .port();
+        let addr = listener.local_addr()
+            .map_err(|e| QuillError::io_error("failed to get local address", e))?;
+        let port = addr.port();
 
         // 3. Open browser to registry/cli-auth
         let auth_url = format!("{}/cli-auth?keyId={}&port={}",
@@ -46,22 +47,26 @@ impl Command for Login {
         // 4. Wait for callback
         println!("Waiting for authentication...");
 
-        let callback_timeout = Duration::from_secs(300); // 5 minutes
-        let _deadline = std::time::Instant::now() + callback_timeout;
+        let callback_timeout = TokioDuration::from_secs(300); // 5 minutes
 
-        let mut stream = listener.accept()
-            .map_err(|e| QuillError::io_error("failed to accept connection", e))
-            .ok()
-            .map(|(stream, _)| stream)
-            .ok_or_else(|| {
-                QuillError::LoginFailed {
+        let result = timeout(callback_timeout, listener.accept()).await;
+
+        let (mut stream, _) = match result {
+            Ok(Ok((stream, addr))) => (stream, addr),
+            Ok(Err(e)) => {
+                return Err(QuillError::io_error("failed to accept connection", e));
+            }
+            Err(_) => {
+                return Err(QuillError::LoginFailed {
                     message: "timeout waiting for authentication".to_string(),
-                }
-            })?;
+                });
+            }
+        };
 
         // Read the callback request
         let mut buffer = vec![0u8; 4096];
-        let _bytes_read = std::io::Read::read(&mut std::io::BufReader::new(&stream), &mut buffer)
+        let _bytes_read = stream.read(&mut buffer)
+            .await
             .map_err(|e| QuillError::io_error("failed to read callback", e))?;
 
         // Parse the callback to get the auth code
@@ -78,6 +83,7 @@ impl Command for Login {
         // Send response to browser
         let response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<html><body>Authentication successful! You can close this tab.</body></html>";
         stream.write_all(response.as_bytes())
+            .await
             .map_err(|e| QuillError::io_error("failed to send response", e))?;
 
         // 5. Save ~/.quillrc

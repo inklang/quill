@@ -3,13 +3,7 @@ use crate::error::{QuillError, Result};
 
 pub use crate::manifest::{PackageManifest, Lockfile, LockedPackage};
 use crate::manifest::lockfile::Lockfile as LockfileStruct;
-
-#[derive(Debug, Clone)]
-pub struct QuillRc {
-    pub token: Option<String>,
-    pub username: Option<String>,
-    pub registry: Option<String>,
-}
+use crate::registry::auth::QuillRc;
 
 #[derive(Debug, Clone)]
 pub struct Context {

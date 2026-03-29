@@ -36,7 +36,10 @@ impl Command for Install {
         let cache_manifest = if cache_manifest_path.exists() {
             let content = std::fs::read_to_string(&cache_manifest_path)
                 .map_err(|e| QuillError::io_error("failed to read cache manifest", e))?;
-            serde_json::from_str(&content).unwrap_or_default()
+            serde_json::from_str(&content)
+                .map_err(|e| QuillError::RegistryAuth {
+                    message: format!("failed to parse cache manifest: {}", e),
+                })?
         } else {
             CacheManifest::default()
         };
