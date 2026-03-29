@@ -6,31 +6,14 @@ import {
   existsSync, mkdirSync, writeFileSync, readdirSync,
   copyFileSync, rmSync,
 } from 'fs'
-import { join, isAbsolute, basename } from 'path'
-import { homedir } from 'os'
+import { join, basename } from 'path'
 import { execSync, spawnSync, spawn, ChildProcess } from 'child_process'
 import chokidar from 'chokidar'
+import { resolveServerDir, ensureServerDir, downloadInkJar } from '../util/server-setup.js'
 
-/**
- * Exported for testing. Resolves the server directory from manifest config.
- * manifest.server?.path is resolved with path.isAbsolute():
- *   - absolute → use as-is
- *   - relative → join with projectDir
- *   - absent → ~/.quill/server
- */
-export function resolveServerDir(
-  projectDir: string,
-  manifest: Pick<PackageManifest, 'server' | 'target' | 'build'>
-): string {
-  const serverPath = manifest.server?.path
-  if (serverPath) {
-    return isAbsolute(serverPath)
-      ? serverPath
-      : join(projectDir, serverPath)
-  }
-  const targetName = manifest.target ?? manifest.build?.target ?? 'paper'
-  return join(homedir(), '.quill', 'server', targetName)
-}
+export { resolveServerDir } from '../util/server-setup.js'
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
 
 /**
  * Exported for testing. Clears and repopulates the server scripts directory
@@ -116,12 +99,17 @@ export class RunCommand {
     // Watch mode
     let isShuttingDown = false
     let redeployInProgress = false
+    let restartBackoff = 2000
+    let serverStartedAt = Date.now()
 
     const redeploy = async () => {
       if (redeployInProgress) return
       redeployInProgress = true
       try {
         await this.killServer(server)
+        // Wait for OS to release the port — Windows holds sockets in TIME_WAIT
+        // after TerminateProcess, causing "Address already in use" on fast restarts
+        await sleep(2000)
 
         const buildResult = spawnSync(process.execPath, [this.cliPath, 'build'], {
           cwd: this.projectDir,
@@ -135,6 +123,7 @@ export class RunCommand {
         this.deployScripts()
         this.deployGrammarJars(this.manifest.target ?? 'paper')
         server = this.spawnServer(paperJarPath)
+        serverStartedAt = Date.now()
         attachExitHandler()
       } finally {
         redeployInProgress = false
@@ -142,12 +131,19 @@ export class RunCommand {
     }
 
     // Server crash/stop handler: if server exits for any reason in watch mode,
-    // treat it as a crash and restart automatically.
+    // treat it as a crash and restart automatically.  Back off if the server
+    // dies quickly (e.g. port-binding failure) to avoid a rapid crash loop.
     const attachExitHandler = () => {
       server.once('exit', () => {
         if (!isShuttingDown) {
-          console.log('\nServer exited — restarting...')
-          redeploy()
+          const uptime = Date.now() - serverStartedAt
+          if (uptime < 10_000) {
+            restartBackoff = Math.min(restartBackoff * 2, 30_000)
+          } else {
+            restartBackoff = 2000
+          }
+          console.log(`\nServer exited — restarting in ${restartBackoff / 1000}s...`)
+          setTimeout(() => redeploy(), restartBackoff)
         }
       })
     }
@@ -203,8 +199,7 @@ export class RunCommand {
 
   private async setup(): Promise<string> {
     const serverDir = this.serverDir
-    mkdirSync(join(serverDir, 'plugins', 'Ink', 'scripts'), { recursive: true })
-    mkdirSync(join(serverDir, 'plugins', 'Ink', 'plugins'), { recursive: true })
+    ensureServerDir(serverDir)
 
     // Step 1: Paper JAR — find one matching the target version, download if absent
     const targetVersion = this.manifest.server?.paper ?? this.manifest.build?.targetVersion ?? '1.21.4'
@@ -218,28 +213,16 @@ export class RunCommand {
     }
 
     // Step 2: Ink.jar (only if absent)
-    const inkJarPath = join(serverDir, 'plugins', 'Ink.jar')
-    if (!existsSync(inkJarPath)) {
-      console.log('Downloading Ink.jar...')
-      try {
-        await FileUtils.downloadFileAtomic(
-          'https://github.com/inklang/ink/releases/latest/download/Ink.jar',
-          inkJarPath
-        )
-        console.log('Downloaded Ink.jar')
-      } catch (e: any) {
-        console.error(`Failed to download Ink.jar: ${e.message}`)
-        process.exit(1)
-      }
+    console.log('Downloading Ink.jar...')
+    try {
+      await downloadInkJar(serverDir)
+      console.log('Downloaded Ink.jar')
+    } catch (e: any) {
+      console.error(`Failed to download Ink.jar: ${e.message}`)
+      process.exit(1)
     }
 
-    // Step 3: eula.txt (only if absent)
-    const eulaPath = join(serverDir, 'eula.txt')
-    if (!existsSync(eulaPath)) {
-      writeFileSync(eulaPath, 'eula=true\n')
-    }
-
-    // Step 4: server.properties (only if absent)
+    // Step 3: server.properties (only if absent)
     const propsPath = join(serverDir, 'server.properties')
     if (!existsSync(propsPath)) {
       writeFileSync(propsPath, 'online-mode=false\nserver-port=25565\n')

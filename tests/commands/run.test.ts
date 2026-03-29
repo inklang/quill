@@ -17,12 +17,12 @@ afterEach(() => {
 describe('resolveServerDir', () => {
   it('returns ~/.quill/server when manifest.server is undefined', () => {
     const result = resolveServerDir('/project', {});
-    expect(result).toBe(path.join(os.homedir(), '.quill', 'server'));
+    expect(result).toBe(path.join(os.homedir(), '.quill', 'server', 'paper'));
   });
 
   it('returns ~/.quill/server when manifest.server.path is undefined', () => {
     const result = resolveServerDir('/project', { server: { paper: '1.21.4' } });
-    expect(result).toBe(path.join(os.homedir(), '.quill', 'server'));
+    expect(result).toBe(path.join(os.homedir(), '.quill', 'server', 'paper'));
   });
 
   it('returns absolute path as-is when manifest.server.path is absolute', () => {
