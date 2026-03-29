@@ -1,0 +1,7 @@
+[package]
+name = "test-project"
+version = "0.1.0"
+type = "script"
+
+[dependencies]
+ink.paper = "^1.0.0"
