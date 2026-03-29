@@ -1,6 +1,7 @@
 mod cli;
 mod context;
 mod error;
+mod manifest;
 
 mod commands;
 

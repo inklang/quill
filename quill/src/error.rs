@@ -12,6 +12,9 @@ pub enum QuillError {
     #[error("failed to parse lockfile at {path}")]
     LockfileParse { path: PathBuf, source: serde_json::Error },
 
+    #[error("failed to serialize lockfile at {path}: {message}")]
+    LockfileSerialize { path: PathBuf, message: String },
+
     #[error("{context}")]
     IoError { context: String, source: std::io::Error },
 
@@ -70,6 +73,10 @@ impl QuillError {
             context: context.into(),
             source,
         }
+    }
+
+    pub fn lockfile_parse_error(path: PathBuf, source: serde_json::Error) -> Self {
+        Self::LockfileParse { path, source }
     }
 }
 

@@ -1,12 +1,8 @@
 use std::path::PathBuf;
 use crate::error::{QuillError, Result};
 
-// Placeholder types - will be defined in later chunks
-#[derive(Debug, Clone)]
-pub struct PackageManifest;
-
-#[derive(Debug, Clone)]
-pub struct Lockfile;
+pub use crate::manifest::{PackageManifest, Lockfile, LockedPackage};
+use crate::manifest::lockfile::Lockfile as LockfileStruct;
 
 #[derive(Debug, Clone)]
 pub struct QuillRc {
@@ -19,7 +15,7 @@ pub struct QuillRc {
 pub struct Context {
     pub project_dir: PathBuf,
     pub manifest: Option<PackageManifest>,
-    pub lockfile: Option<Lockfile>,
+    pub lockfile: Option<LockfileStruct>,
     pub registry_url: String,
     pub rc: Option<QuillRc>,
     pub verbose: bool,
@@ -50,22 +46,18 @@ impl Context {
 
         // Placeholder - will parse properly in later chunk
         let _ = content;
-        self.manifest = Some(PackageManifest);
+        self.manifest = None;
         Ok(())
     }
 
     pub fn load_lockfile(&mut self) -> Result<()> {
-        let lockfile_path = self.project_dir.join("ink-lockfile.json");
+        let lockfile_path = self.project_dir.join("quill.lock");
         if !lockfile_path.exists() {
             return Ok(());
         }
 
-        let content = std::fs::read_to_string(&lockfile_path)
-            .map_err(|e| QuillError::io_error("failed to read lockfile", e))?;
-
-        // Placeholder - will parse properly in later chunk
-        let _ = content;
-        self.lockfile = Some(Lockfile);
+        let lockfile = LockfileStruct::load(&lockfile_path)?;
+        self.lockfile = Some(lockfile);
         Ok(())
     }
 }
