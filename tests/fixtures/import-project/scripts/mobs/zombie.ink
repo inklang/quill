@@ -1,0 +1,3 @@
+fn brains() {
+  print("BRAINS!")
+}

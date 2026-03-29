@@ -1,0 +1,7 @@
+[package]
+name = "import-test"
+version = "0.1.0"
+
+[build]
+compiler = "../../../compiler/printing_press.exe"
+entry = "scripts/main.ink"

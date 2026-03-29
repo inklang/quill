@@ -12,6 +12,7 @@ import { hashFile, hashGrammarIr, findDirtyFiles, DirtyFile } from '../cache/uti
 import { tmpdir, homedir } from 'os'
 import { pathToFileURL } from 'url'
 import { scanUsingDeclarations } from '../util/using-scan.js'
+import { discoverImportGraph } from '../util/import-graph.js'
 import { mergeGrammars } from '../grammar/merge.js'
 import { resolveCompiler } from '../util/compiler.js'
 import { resolveTargetVersion, checkTargetVersionCompatibility } from '../util/target-version.js'
@@ -201,93 +202,113 @@ export class InkBuildCommand {
         // Resolve `using` declarations and merge package grammars into base IR
         const grammarIrFile = (manifest.grammar?.output ?? 'dist/grammar.ir.json').replace(/^dist\//, '');
         const grammarIrPath = join(distDir, grammarIrFile);
-        if (existsSync(grammarIrPath)) {
+        // Entry-point mode: only when build.entry is explicitly set in manifest
+        const mainScript = manifest.build?.entry;
+        const entryPointPath = mainScript ? join(this.projectDir, mainScript) : '';
+        if (mainScript && existsSync(entryPointPath)) {
+          console.log(`Compiling from entry point: ${mainScript}`);
+
+          // Discover all files reachable via imports for using-scanning
+          const allFiles = discoverImportGraph(entryPointPath);
+
+          // Resolve `using` declarations from all discovered files
+          if (existsSync(grammarIrPath)) {
+            await this.resolveAndMergeGrammars(allFiles, grammarIrPath);
+          }
+
+          this.compileEntryPoint(compiler, entryPointPath, outDir, existsSync(grammarIrPath) ? grammarIrPath : undefined);
+
+          inkManifest.scripts = ['main.inkc'];
+        } else if (existsSync(grammarIrPath)) {
           const scriptPaths = inkFiles.map(f => join(scriptsDir, f));
           await this.resolveAndMergeGrammars(scriptPaths, grammarIrPath);
         }
 
-        if (opts.full) {
-          // Full rebuild: batch mode + fresh manifest
-          this.compileScriptsBatch(compiler, scriptsDir, outDir, distDir, existsSync(grammarIrPath) ? grammarIrPath : undefined);
-          const grammarHash = hashGrammarIr(distDir);
-          const dirtyFiles: DirtyFile[] = inkFiles.map(f => ({
-            relativePath: `scripts/${f}`.replace(/\\/g, '/'),
-            hash: hashFile(join(scriptsDir, f)),
-          }));
-          const entries: Record<string, any> = {};
-          for (const f of dirtyFiles) {
-            const output = f.relativePath.replace(/\.ink$/, '.inkc');
-            entries[f.relativePath] = {
-              hash: f.hash,
-              output,
-              compiledAt: new Date().toISOString(),
-            };
-          }
-          const cacheManifest = {
-            version: 1 as const,
-            lastFullBuild: new Date().toISOString(),
-            grammarIrHash: grammarHash,
-            runtimeJarHash: currentRuntimeJarHash,
-            entries,
-          };
-          const cacheStore = new CacheManifestStore(join(this.projectDir, '.quill', 'cache'));
-          cacheStore.write(cacheManifest);
-        } else {
-          // Incremental build
-          const cacheStore = new CacheManifestStore(join(this.projectDir, '.quill', 'cache'));
-          const cachedManifest = cacheStore.read();
-
-          // Grammar IR or runtime JAR change invalidates all scripts
-          const currentGrammarHash = hashGrammarIr(distDir);
-          const grammarChanged = cachedManifest && cachedManifest.grammarIrHash !== currentGrammarHash;
-          const runtimeJarChanged = cachedManifest && cachedManifest.runtimeJarHash !== currentRuntimeJarHash;
-
-          if (grammarChanged) {
-            console.log('Grammar IR changed — invalidating script cache');
-          }
-          if (runtimeJarChanged) {
-            console.log('Runtime JAR changed — invalidating script cache');
-          }
-
-          const dirtyFiles = (grammarChanged || runtimeJarChanged)
-            ? inkFiles.map(f => ({
-                relativePath: `scripts/${f}`.replace(/\\/g, '/'),
-                hash: hashFile(join(scriptsDir, f)),
-              }))
-            : findDirtyFiles(this.projectDir, scriptsDir, cachedManifest);
-
-          if (dirtyFiles.length === 0) {
-            console.log('All scripts up to date — skipping compilation');
-          } else {
-            // Single-file mode per dirty file
-            const compiledCount = this.compileScriptsIncremental(compiler, dirtyFiles, scriptsDir, outDir, existsSync(grammarIrPath) ? grammarIrPath : undefined);
-            console.log(`Compiled ${compiledCount} script(s)`);
-
-            // Merge new entries into manifest
-            const allEntries = { ...(cachedManifest?.entries ?? {}) };
+        if (!existsSync(entryPointPath)) {
+          // Legacy batch/incremental mode (no entry point)
+          if (opts.full) {
+            // Full rebuild: batch mode + fresh manifest
+            this.compileScriptsBatch(compiler, scriptsDir, outDir, distDir, existsSync(grammarIrPath) ? grammarIrPath : undefined);
+            const grammarHash = hashGrammarIr(distDir);
+            const dirtyFiles: DirtyFile[] = inkFiles.map(f => ({
+              relativePath: `scripts/${f}`.replace(/\\/g, '/'),
+              hash: hashFile(join(scriptsDir, f)),
+            }));
+            const entries: Record<string, any> = {};
             for (const f of dirtyFiles) {
               const output = f.relativePath.replace(/\.ink$/, '.inkc');
-              allEntries[f.relativePath] = {
+              entries[f.relativePath] = {
                 hash: f.hash,
                 output,
                 compiledAt: new Date().toISOString(),
               };
             }
-            // Remove entries for deleted source files
-            for (const relPath of Object.keys(allEntries)) {
-              const fullPath = join(this.projectDir, relPath);
-              if (!existsSync(fullPath)) {
-                delete allEntries[relPath];
-              }
-            }
-            const newManifest = {
+            const cacheManifest = {
               version: 1 as const,
-              lastFullBuild: cachedManifest?.lastFullBuild ?? new Date().toISOString(),
-              grammarIrHash: currentGrammarHash,
+              lastFullBuild: new Date().toISOString(),
+              grammarIrHash: grammarHash,
               runtimeJarHash: currentRuntimeJarHash,
-              entries: allEntries,
+              entries,
             };
-            cacheStore.write(newManifest);
+            const cacheStore = new CacheManifestStore(join(this.projectDir, '.quill', 'cache'));
+            cacheStore.write(cacheManifest);
+          } else {
+            // Incremental build
+            const cacheStore = new CacheManifestStore(join(this.projectDir, '.quill', 'cache'));
+            const cachedManifest = cacheStore.read();
+
+            // Grammar IR or runtime JAR change invalidates all scripts
+            const currentGrammarHash = hashGrammarIr(distDir);
+            const grammarChanged = cachedManifest && cachedManifest.grammarIrHash !== currentGrammarHash;
+            const runtimeJarChanged = cachedManifest && cachedManifest.runtimeJarHash !== currentRuntimeJarHash;
+
+            if (grammarChanged) {
+              console.log('Grammar IR changed — invalidating script cache');
+            }
+            if (runtimeJarChanged) {
+              console.log('Runtime JAR changed — invalidating script cache');
+            }
+
+            const dirtyFiles = (grammarChanged || runtimeJarChanged)
+              ? inkFiles.map(f => ({
+                  relativePath: `scripts/${f}`.replace(/\\/g, '/'),
+                  hash: hashFile(join(scriptsDir, f)),
+                }))
+              : findDirtyFiles(this.projectDir, scriptsDir, cachedManifest);
+
+            if (dirtyFiles.length === 0) {
+              console.log('All scripts up to date — skipping compilation');
+            } else {
+              // Single-file mode per dirty file
+              const compiledCount = this.compileScriptsIncremental(compiler, dirtyFiles, scriptsDir, outDir, existsSync(grammarIrPath) ? grammarIrPath : undefined);
+              console.log(`Compiled ${compiledCount} script(s)`);
+
+              // Merge new entries into manifest
+              const allEntries = { ...(cachedManifest?.entries ?? {}) };
+              for (const f of dirtyFiles) {
+                const output = f.relativePath.replace(/\.ink$/, '.inkc');
+                allEntries[f.relativePath] = {
+                  hash: f.hash,
+                  output,
+                  compiledAt: new Date().toISOString(),
+                };
+              }
+              // Remove entries for deleted source files
+              for (const relPath of Object.keys(allEntries)) {
+                const fullPath = join(this.projectDir, relPath);
+                if (!existsSync(fullPath)) {
+                  delete allEntries[relPath];
+                }
+              }
+              const newManifest = {
+                version: 1 as const,
+                lastFullBuild: cachedManifest?.lastFullBuild ?? new Date().toISOString(),
+                grammarIrHash: currentGrammarHash,
+                runtimeJarHash: currentRuntimeJarHash,
+                entries: allEntries,
+              };
+              cacheStore.write(newManifest);
+            }
           }
         }
         const compiledFiles = readdirSync(outDir).filter(f => f.endsWith('.inkc'));
@@ -499,6 +520,52 @@ writeFileSync('${grammarOutputPath.replace(/\\/g, '\\\\')}', result);
     mkdirSync(dirname(outputPath), { recursive: true });
     writeFileSync(outputPath, JSON.stringify(ir, null, 2));
     console.log(`Grammar IR written to ${outputPath}`);
+  }
+
+  /**
+   * Compile using a single entry point with import resolution.
+   * The compiler resolves all `import "./file"` statements transitively.
+   */
+  private compileEntryPoint(
+    compiler: string,
+    entryFile: string,
+    outDir: string,
+    grammarIrPath?: string
+  ): void {
+    const isNative = /\.(exe|bat|cmd|sh)$/.test(compiler) || compiler.includes('printing_press');
+    const compilerPath = compiler.replace(/\\/g, '/');
+    const entryFwd = entryFile.replace(/\\/g, '/');
+    const outputPath = join(outDir, 'main.inkc').replace(/\\/g, '/');
+
+    const grammarFlag = grammarIrPath
+      ? `--grammar "${grammarIrPath.replace(/\\/g, '/')}" `
+      : '';
+
+    if (isNative) {
+      try {
+        const output = execSync(
+          `"${compilerPath}" compile ${grammarFlag}--entry "${entryFwd}" -o "${outputPath}"`,
+          { cwd: this.projectDir, stdio: 'pipe' } as any
+        )?.toString() ?? '';
+        if (output) console.log(output.trim());
+      } catch (e: any) {
+        const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '');
+        console.error('Ink compilation failed:\n' + output);
+        process.exit(1);
+      }
+    } else {
+      const javaCmd = (process.env['INK_JAVA'] || 'java').replace(/\\/g, '/');
+      try {
+        execSync(
+          `"${javaCmd}" -jar "${compilerPath}" compile ${grammarFlag}--entry "${entryFwd}" -o "${outputPath}"`,
+          { cwd: this.projectDir, stdio: 'pipe' } as any
+        );
+      } catch (e: any) {
+        const output = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '');
+        console.error('Ink compilation failed:\n' + output);
+        process.exit(1);
+      }
+    }
   }
 
   private compileScriptsBatch(
