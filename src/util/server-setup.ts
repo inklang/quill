@@ -18,9 +18,13 @@ export function ensureServerDir(serverDir: string): void {
 
 export async function downloadInkJar(serverDir: string): Promise<string> {
   const inkJarPath = join(serverDir, 'plugins', 'Ink.jar')
+  const bukkitJarPath = join(serverDir, 'plugins', 'Ink-bukkit.jar')
 
   if (existsSync(inkJarPath)) {
     return inkJarPath
+  }
+  if (existsSync(bukkitJarPath)) {
+    return bukkitJarPath
   }
 
   await FileUtils.downloadFileAtomic(

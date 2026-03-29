@@ -1,6 +1,6 @@
 import * as clack from '@clack/prompts'
 import { existsSync, mkdirSync, writeFileSync } from 'fs'
-import { join, basename } from 'path'
+import { join, basename, relative } from 'path'
 import { TomlParser } from '../util/toml.js'
 import type { PackageManifest } from '../model/manifest.js'
 import { ensureServerDir, downloadInkJar } from '../util/server-setup.js'
@@ -105,13 +105,14 @@ export class SetupCommand {
     }
 
     // Summary
+    const displayDir = relative(process.cwd(), serverDir) || '.'
     clack.note(
       `1. Browse packages:  quill search <keyword>\n` +
       `   or visit: https://lectern.ink/packages\n\n` +
       `2. Add packages:     quill add <package-name>\n\n` +
-      `3. Write scripts:    edit files in ${serverDir}/scripts/\n\n` +
+      `3. Write scripts:    edit files in ${displayDir}/scripts/\n\n` +
       `4. Build & deploy:   quill build\n\n` +
-      `5. Start server:     cd ${serverDir} && java -jar paper.jar`,
+      `5. Start server:     cd ${displayDir} && java -jar paper.jar`,
       'Next steps'
     )
 
