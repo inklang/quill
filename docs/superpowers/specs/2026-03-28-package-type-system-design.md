@@ -42,11 +42,14 @@ type?: 'script' | 'library'  // optional, defaults to 'script' at read time
 main?: string                 // change from required to optional
 ```
 
-`TomlParser.read` applies defaults:
+`TomlParser.read` applies defaults (parse order matters — `type` is read first):
 - `type` defaults to `'script'` if absent from TOML.
 - `main` defaults to `'main'` if absent and `type` is `'script'`. No default for `type = 'library'`.
 
+Client-side validation rejects invalid `type` values (anything other than `'script'` or `'library'`) at parse time with a clear error message.
+
 `RegistryPackageVersion` (in `src/registry/client.ts`) gains `package_type: string`.
+`SearchResult` (in `src/registry/client.ts`) gains `package_type: string`.
 
 ### Quill CLI
 
@@ -60,10 +63,14 @@ main?: string                 // change from required to optional
   - **library**: no `scripts/` directory created, no `main` field in toml.
 - `--type` is independent of the existing `--package` flag. `--package` controls the scaffolding template (package vs project), `--type` controls the package type field. They can be combined freely.
 
+#### `quill init`
+
+Also gains `--type=script|library` with the same defaults and behavior as `quill new`.
+
 #### `quill publish`
 
 - Reads `type` from `ink-package.toml` (defaults to `script` if absent).
-- If `type = "script"`, validates that `main` exists as a compiled file on disk. Exits with error if missing.
+- If `type = "script"`, validates that `main` exists as a compiled file on disk. For multi-target builds, checks `dist/<target>/scripts/<main>.inkc`; for single-target, checks `dist/scripts/<main>.inkc`. Exits with error if missing.
 - Sends `package_type` as an HTTP header `X-Package-Type` in the publish request (consistent with existing `X-Package-Targets` header pattern).
 
 ### Registry / Database
