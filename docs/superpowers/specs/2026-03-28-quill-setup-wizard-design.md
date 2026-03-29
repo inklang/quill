@@ -27,14 +27,19 @@ quill setup [path]
 - Alias: none needed (the command is self-explanatory)
 - Registered in the **Project** command group in `COMMAND_GROUPS`, before `init` (since it's the recommended entry point for new users)
 - Non-interactive mode (`--yes` flag) is deferred to a future iteration
+- Does NOT call `requireProject()` — it creates the project, so it's exempt from the guard (like `quill new`, `quill init`, `quill login`, `quill search`)
 
 ## Shared Server Setup Module
 
 `quill run` already performs server directory creation, Ink JAR download, and eula.txt setup (see `RunCommand` in `src/commands/run.ts`, lines 219-263). Rather than duplicating this logic, `quill setup` reuses it by extracting the shared pieces into `src/util/server-setup.ts`:
 
-- `ensureServerDir(serverDir: string)` — creates directory, writes eula.txt, creates plugins/
-- `downloadInkJar(pluginsDir: string)` — downloads latest Ink JAR from GitHub releases
-- `resolveServerDir(projectDir, manifest)` — already exported from run.ts, will move to the shared module
+| Function | Responsibilities | Used by |
+|----------|------------------|---------|
+| `ensureServerDir(serverDir)` | Creates dir, writes `eula.txt`, creates `plugins/`, `plugins/Ink/scripts/`, `plugins/Ink/plugins/` | setup, run |
+| `downloadInkJar(serverDir)` | Downloads latest Ink JAR to `<serverDir>/plugins/Ink.jar` | setup, run |
+| `resolveServerDir(projectDir, manifest)` | Resolves `manifest.server?.path` (absolute → as-is, relative → join with projectDir, absent → `~/.quill/server/<target>`) | setup, run, build |
+
+Note: `RunCommand` also creates `server.properties` and copies/links the Paper JAR — these are `quill run`-specific and stay in `RunCommand`, not the shared module.
 
 Both `quill setup` and `quill run` import from this shared module. Bug fixes and changes to the setup flow only need to happen in one place.
 
@@ -81,6 +86,8 @@ path = "."
 
 This reuses the existing `[server]` section in `PackageManifest` (`manifest.server.path`) — the same field that `RunCommand.resolveServerDir()` reads. No new TOML sections needed.
 
+**Path semantics:** When `path = "."`, the server directory equals the project directory (they're the same folder). The `[path]` argument determines where this combined project+server directory is created. If the admin points at an existing server (e.g. `/opt/minecraft/myserver`), the TOML gets `path = "/opt/minecraft/myserver"` and the project files are created there. If they accept the default `./server`, a new directory is created and `path = "."`.
+
 Also creates an empty `scripts/` directory. The existing `InitCommand` does not create `scripts/` or set `[server]`, so setup handles this inline.
 
 ### 4. Summary
@@ -121,7 +128,8 @@ When `manifest.server?.path` is set (which `quill setup` configures):
 
 1. Build proceeds as normal (compile grammar, compile scripts)
 2. After build, call `deployScripts(serverDir, projectDir)` — the same function `quill run` already uses (exported from `src/commands/run.ts`, line 41)
-3. This clears `plugins/Ink/scripts/` and copies `dist/scripts/*.inkc` into it
+3. Also call `deployGrammarJars(serverDir, projectDir)` — deploys grammar runtime JARs to the server (same as `quill run` does at line 104)
+4. This clears `plugins/Ink/scripts/` and copies `dist/scripts/*.inkc` into it, plus grammar JARs
 
 When `manifest.server?.path` is NOT set, `quill build` works as it does today (outputs to `dist/` only).
 
@@ -161,7 +169,7 @@ This means existing Ink developers are unaffected — the deploy behavior only a
 
 ## Dependencies
 
-- **`@clack/prompts`** for interactive prompts — lightweight, beautiful terminal UI designed specifically for wizards. Small dependency footprint, good Windows terminal support, consistent with the wizard UX pattern.
+- **`@clack/prompts`** for the setup wizard UI — lightweight, beautiful terminal UI designed specifically for wizards. Gives a polished, boxed, ratatui-style look with spinners, progress bars, and styled prompts. Small dependency footprint, good Windows terminal support. Note: the existing CLI uses raw `readline` for prompts (`quill new`, `quill add`). Adopting `@clack/prompts` for `quill setup` is the first step; migrating existing commands to it is a separate follow-up task to keep scope focused.
 - `inklang/ink` GitHub releases for Ink JAR download (same source as `quill run`)
 - Shared `src/util/server-setup.ts` module (extracted from `RunCommand`)
-- Existing `deployScripts()` function from `src/commands/run.ts`
+- Existing `deployScripts()` and `deployGrammarJars()` functions from `src/commands/run.ts`
