@@ -23,7 +23,18 @@ impl GrammarParser {
     }
 
     pub fn parse(&mut self) -> Result<GrammarIr> {
-        let package = self.parse_grammar_decl()?;
+        // Grammar declaration is optional; if not present, package defaults to empty
+        let package = if self.peek_word() == Some("grammar".to_string()) {
+            // Must use parse_grammar_decl directly since peek_word doesn't consume
+            self.expect_word("grammar")?;
+            self.skip_whitespace();
+            let name = self.parse_ident()?;
+            self.skip_whitespace();
+            self.expect_char(';')?;
+            name
+        } else {
+            String::new()
+        };
         let mut imports = Vec::new();
         let mut keywords = BTreeMap::new();
 
@@ -33,13 +44,14 @@ impl GrammarParser {
                 break;
             }
 
-            if self.check_word("using") {
-                let import = self.parse_using()?;
+            let word = self.peek_word();
+            if word == Some("using".to_string()) {
+                let import = self.parse_using_direct()?;
                 imports.push(import);
-            } else if self.check_word("declare") {
-                let keyword = self.parse_declare_keyword()?;
+            } else if word == Some("declare".to_string()) {
+                let keyword = self.parse_declare_keyword_direct()?;
                 keywords.insert(keyword.name.clone(), keyword);
-            } else if self.check_word("grammar") {
+            } else if word == Some("grammar".to_string()) {
                 // Grammar declaration must be at the top; error if seen later
                 return Err(self.error("grammar declaration must be at the top of the file"));
             } else {
@@ -64,7 +76,9 @@ impl GrammarParser {
         Ok(name)
     }
 
-    fn parse_using(&mut self) -> Result<String> {
+    // Direct versions that assume the keyword has already been consumed by peek_word in the main loop
+    fn parse_using_direct(&mut self) -> Result<String> {
+        // Must consume "using" keyword first (like parse_declare_keyword_direct consumes "declare")
         self.expect_word("using")?;
         self.skip_whitespace();
         let package = self.parse_ident()?;
@@ -73,13 +87,15 @@ impl GrammarParser {
         Ok(package)
     }
 
-    fn parse_declare_keyword(&mut self) -> Result<KeywordDef> {
+    fn parse_declare_keyword_direct(&mut self) -> Result<KeywordDef> {
+        // Must consume "declare" keyword first (like we now do for "using")
         self.expect_word("declare")?;
         self.skip_whitespace();
         let name = self.parse_ident()?;
         self.skip_whitespace();
 
-        let inherits = if self.check_word("inherits") {
+        // Check for "inherits" without consuming (peek_word doesn't consume)
+        let inherits = if self.peek_word() == Some("inherits".to_string()) {
             self.expect_word("inherits")?;
             self.skip_whitespace();
             let base = self.parse_ident()?;
@@ -93,7 +109,7 @@ impl GrammarParser {
         self.skip_whitespace();
 
         let mut rules = BTreeMap::new();
-        while !self.check_char('}') && !self.is_at_end() {
+        while self.peek_char() != Some('}') && !self.is_at_end() {
             let rule = self.parse_rule()?;
             rules.insert(rule.name.clone(), rule);
             self.skip_whitespace();
@@ -286,10 +302,12 @@ impl GrammarParser {
         }
 
         self.pos += 1;
+        self.col += 1;
         while self.pos < self.input.len() {
             let c = self.input[self.pos];
-            if c.is_alphanumeric() || c == '_' || c == '-' {
+            if c.is_alphanumeric() || c == '_' || c == '-' || c == '.' || c == ':' {
                 self.pos += 1;
+                self.col += 1;
             } else {
                 break;
             }
