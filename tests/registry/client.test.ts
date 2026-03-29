@@ -41,6 +41,39 @@ describe('RegistryClient', () => {
       expect(ver.targets).toBeUndefined()
     })
 
+    it('parses package_type from version data', () => {
+      const json = JSON.stringify({
+        packages: {
+          'ink.mobs': {
+            '1.0.0': {
+              url: 'https://example.com/ink.mobs-1.0.0.tar.gz',
+              dependencies: {},
+              package_type: 'library',
+            }
+          }
+        }
+      })
+      const index = new RegistryClient().parseIndex(json)
+      const pkg = (index as any).get('ink.mobs')
+      expect(pkg?.versions.get('1.0.0')?.packageType).toBe('library')
+    })
+
+    it('package_type defaults to "script" when absent', () => {
+      const json = JSON.stringify({
+        packages: {
+          'my-game': {
+            '1.0.0': {
+              url: 'https://example.com/my-game-1.0.0.tar.gz',
+              dependencies: {},
+            }
+          }
+        }
+      })
+      const index = new RegistryClient().parseIndex(json)
+      const pkg = (index as any).get('my-game')
+      expect(pkg?.versions.get('1.0.0')?.packageType).toBe('script')
+    })
+
     it('parseIndex reads checksum from version data', () => {
       const json = JSON.stringify({
         packages: {

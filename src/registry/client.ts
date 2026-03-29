@@ -14,6 +14,7 @@ export class RegistryPackageVersion {
     public readonly homepage?: string,
     public readonly targets?: string[],
     public readonly checksum?: string,  // sha256:<hash> of tarball
+    public readonly packageType: string = 'script',
   ) {}
 }
 
@@ -29,6 +30,7 @@ export interface SearchResult {
   version: string;
   description: string;
   score: number;
+  package_type: string;
 }
 
 export interface PackageInfo {
@@ -39,6 +41,7 @@ export interface PackageInfo {
   homepage?: string;
   targets?: string[];
   checksum?: string;
+  package_type?: string;
 }
 
 export class RegistryClient {
@@ -82,15 +85,22 @@ export class RegistryClient {
       for (const [verStr, verData] of Object.entries<Record<string, any>>(versions)) {
         versionMap.set(verStr, new RegistryPackageVersion(
           verStr,
-          verData.url ?? '',
+          verData.url ?? verData.tarball_url ?? '',
           verData.dependencies ?? {},
           verData.description,
           verData.homepage,
           verData.targets,
           verData.checksum,
+          verData.package_type ?? 'script',
         ));
       }
-      packages.set(pkgName, new RegistryPackage(pkgName, versionMap));
+      const pkg = new RegistryPackage(pkgName, versionMap);
+      packages.set(pkgName, pkg);
+      // Also index by short name (part after '/') so `quill add ink.paper` works
+      const shortName = pkgName.includes('/') ? pkgName.slice(pkgName.indexOf('/') + 1) : null;
+      if (shortName && !packages.has(shortName)) {
+        packages.set(shortName, pkg);
+      }
     }
 
     const proxy = new Proxy(packages, {
@@ -213,6 +223,7 @@ export class RegistryClient {
       homepage: pkgVer.homepage,
       targets: pkgVer.targets,
       checksum: pkgVer.checksum,
+      package_type: pkgVer.packageType,
     };
   }
 
