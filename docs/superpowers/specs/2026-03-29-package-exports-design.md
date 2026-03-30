@@ -93,7 +93,7 @@ The top-level `version` field enables future format evolution. Consumers check t
 
 ### Grammar Detection
 
-The `grammars` array lists grammar namespace identifiers — the name declared in the grammar source file (e.g., `grammar economy;` produces the identifier `"economy"`). When a package has no grammar declarations, the array is empty.
+The `grammars` array lists grammar package namespace identifiers — the `package` field from the project's `GrammarPackage` (e.g., a grammar file declaring `package ink.paper` produces the identifier `"ink.paper"`). This is distinct from individual `GrammarDecl` names (like `PaperPlugin`), which are declarations within a grammar package. When a package has no grammar files, the array is empty.
 
 ## Author Matching for `@internal`
 
@@ -146,7 +146,7 @@ Packages use the existing `import ... from` syntax to import specific items from
 import Wallet, format_currency from economy
 ```
 
-This maps to the existing `Stmt::ImportFrom` AST node with `path = "economy"` and `items = ["Wallet", "format_currency"]`. No new syntax or keywords are needed — the compiler extends the existing import resolution to validate against `exports.json` for package-level imports (as opposed to file-level imports which use `import ... from "./path"`).
+This maps to the existing `Stmt::ImportFrom` AST node with `path: vec!["economy"]` and `items: vec!["Wallet", "format_currency"]`. The `path` field is a `Vec<String>` containing a single element for package imports. No new syntax or keywords are needed — the compiler extends the existing import resolution to validate against `exports.json` for package-level imports (as opposed to file-level imports which use `import ... from "./path"`).
 
 ### Compile-Time Validation
 
@@ -157,6 +157,8 @@ The import resolver is extended to handle `Stmt::ImportFrom` with a non-file pat
 3. Verify each imported item exists in `classes`, `functions`, or `grammars`
 4. Check visibility: if the item is `internal`, verify the importing package shares the same author
 5. Emit a compile error if the import doesn't resolve or visibility check fails
+
+**Missing `exports.json`**: If a dependency has no `exports.json` (e.g., published before this feature existed, or built with an older quill version), the compiler emits a warning rather than a hard error: `warning: package 'economy' has no exports metadata — import validation skipped`. This maintains backward compatibility with pre-exports packages.
 
 The lockfile guarantees the cache contains the correct resolved version of each dependency.
 
