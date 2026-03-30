@@ -241,9 +241,13 @@ impl<'a> Parser<'a> {
     /// Parse a let/const statement.
     fn parse_var(&mut self, annotations: Vec<Expr>) -> Result<Stmt> {
         let keyword = self.advance(); // consume let or const
-        let name = self.consume(&TokenType::Identifier, "Expected variable name")?;
+        let pattern = self.parse_pattern()?;
         let type_annot = if self.match_token(&[TokenType::Colon]) {
-            Some(self.parse_type()?)
+            let annot = Some(self.parse_type()?);
+            if !matches!(pattern, Pattern::Bind(_)) {
+                return Err(self.parse_error("type annotation not allowed on destructuring pattern"));
+            }
+            annot
         } else {
             None
         };
@@ -257,17 +261,89 @@ impl<'a> Parser<'a> {
         }
         if keyword.typ == TokenType::KwConst {
             Ok(Stmt::Const {
-                pattern: Pattern::Bind(name),
+                pattern,
                 type_annot,
                 value: value.unwrap_or(Expr::Literal(Value::Null)),
             })
         } else {
             Ok(Stmt::Let {
                 annotations,
-                pattern: Pattern::Bind(name),
+                pattern,
                 type_annot,
                 value: value.unwrap_or(Expr::Literal(Value::Null)),
             })
+        }
+    }
+
+    /// Parse a destructuring pattern: identifier, `_`, `(a, b, ...)`, or `{field, field: rename, ...}`.
+    fn parse_pattern(&mut self) -> Result<Pattern> {
+        match self.peek().typ {
+            TokenType::LParen => {
+                self.advance(); // consume '('
+                let mut patterns = Vec::new();
+                if !self.check(&TokenType::RParen) {
+                    loop {
+                        patterns.push(self.parse_pattern()?);
+                        if !self.match_token(&[TokenType::Comma]) {
+                            break;
+                        }
+                        // Allow trailing comma before ')'
+                        if self.check(&TokenType::RParen) {
+                            break;
+                        }
+                    }
+                }
+                self.consume(&TokenType::RParen, "Expected ')' after tuple pattern")?;
+                match patterns.len() {
+                    0 => Err(self.parse_error("destructuring pattern must have at least one binding")),
+                    1 => Err(self.parse_error("tuple destructuring requires at least 2 bindings; for a single binding use 'let a = ...'")),
+                    _ => Ok(Pattern::Tuple(patterns)),
+                }
+            }
+            TokenType::LBrace => {
+                self.advance(); // consume '{'
+                let mut entries: Vec<(Token, Option<Token>)> = Vec::new();
+                if !self.check(&TokenType::RBrace) {
+                    loop {
+                        let field_tok = self.consume(&TokenType::Identifier, "Expected field name in map pattern")?;
+                        if field_tok.lexeme == "_" {
+                            return Err(self.error_at(&field_tok, "wildcard '_' is not valid as a map field name"));
+                        }
+                        let rename = if self.match_token(&[TokenType::Colon]) {
+                            let rename_tok = self.consume(&TokenType::Identifier, "Expected rename target after ':'")?;
+                            if rename_tok.lexeme == "_" {
+                                return Err(self.error_at(&rename_tok, "wildcard '_' is not valid as a rename target"));
+                            }
+                            Some(rename_tok)
+                        } else {
+                            None
+                        };
+                        entries.push((field_tok, rename));
+                        if !self.match_token(&[TokenType::Comma]) {
+                            break;
+                        }
+                        // Allow trailing comma before '}'
+                        if self.check(&TokenType::RBrace) {
+                            break;
+                        }
+                    }
+                }
+                self.consume(&TokenType::RBrace, "Expected '}' after map pattern")?;
+                if entries.is_empty() {
+                    Err(self.parse_error("destructuring pattern must have at least one binding"))
+                } else {
+                    Ok(Pattern::Map(entries))
+                }
+            }
+            TokenType::Identifier => {
+                let tok = self.advance();
+                if tok.lexeme == "_" {
+                    Ok(Pattern::Wildcard)
+                } else {
+                    Ok(Pattern::Bind(tok))
+                }
+            }
+            _ => Err(self.parse_error("expected pattern")),
         }
     }
 
@@ -419,12 +495,12 @@ impl<'a> Parser<'a> {
     /// Parse a for loop.
     fn parse_for(&mut self) -> Result<Stmt> {
         self.advance(); // consume 'for'
-        let variable = self.consume(&TokenType::Identifier, "Expected loop variable")?;
+        let pattern = self.parse_pattern()?;
         self.consume(&TokenType::KwIn, "Expected 'in' after loop variable")?;
         let iterable = self.parse_expression(Precedence::None)?;
         let body = self.parse_block()?;
         Ok(Stmt::For {
-            pattern: Pattern::Bind(variable),
+            pattern,
             iterable,
             body: Box::new(body),
         })
@@ -2567,5 +2643,120 @@ mod tests {
         let stmts = parse("throw \"error\"");
         assert_eq!(stmts.len(), 1);
         assert!(matches!(&stmts[0], Stmt::Throw(_)));
+    }
+
+    fn parse_result(source: &str) -> Result<Vec<Stmt>> {
+        let tokens = crate::printing_press::inklang::lexer::tokenize(source);
+        Parser::new(tokens, None).parse()
+    }
+
+    #[test]
+    fn test_parse_tuple_pattern() {
+        let stmts = parse("let (a, b) = pair");
+        match &stmts[0] {
+            Stmt::Let { pattern: Pattern::Tuple(pats), .. } => {
+                assert_eq!(pats.len(), 2);
+                assert!(matches!(&pats[0], Pattern::Bind(t) if t.lexeme == "a"));
+                assert!(matches!(&pats[1], Pattern::Bind(t) if t.lexeme == "b"));
+            }
+            _ => panic!("Expected Let with Tuple pattern"),
+        }
+    }
+
+    #[test]
+    fn test_parse_wildcard_in_tuple() {
+        let stmts = parse("let (x, _) = pair");
+        match &stmts[0] {
+            Stmt::Let { pattern: Pattern::Tuple(pats), .. } => {
+                assert_eq!(pats.len(), 2);
+                assert!(matches!(&pats[0], Pattern::Bind(t) if t.lexeme == "x"));
+                assert!(matches!(&pats[1], Pattern::Wildcard));
+            }
+            _ => panic!("Expected Let with Tuple pattern containing wildcard"),
+        }
+    }
+
+    #[test]
+    fn test_parse_map_pattern_shorthand() {
+        let stmts = parse("let {name, health} = player");
+        match &stmts[0] {
+            Stmt::Let { pattern: Pattern::Map(entries), .. } => {
+                assert_eq!(entries.len(), 2);
+                assert_eq!(entries[0].0.lexeme, "name");
+                assert!(entries[0].1.is_none());
+                assert_eq!(entries[1].0.lexeme, "health");
+                assert!(entries[1].1.is_none());
+            }
+            _ => panic!("Expected Let with Map pattern (shorthand)"),
+        }
+    }
+
+    #[test]
+    fn test_parse_map_pattern_rename() {
+        let stmts = parse("let {name: n, health: hp} = player");
+        match &stmts[0] {
+            Stmt::Let { pattern: Pattern::Map(entries), .. } => {
+                assert_eq!(entries.len(), 2);
+                assert_eq!(entries[0].0.lexeme, "name");
+                assert!(matches!(&entries[0].1, Some(t) if t.lexeme == "n"));
+                assert_eq!(entries[1].0.lexeme, "health");
+                assert!(matches!(&entries[1].1, Some(t) if t.lexeme == "hp"));
+            }
+            _ => panic!("Expected Let with Map pattern (rename)"),
+        }
+    }
+
+    #[test]
+    fn test_parse_nested_tuple() {
+        let stmts = parse("let (a, (b, c)) = nested");
+        match &stmts[0] {
+            Stmt::Let { pattern: Pattern::Tuple(pats), .. } => {
+                assert_eq!(pats.len(), 2);
+                assert!(matches!(&pats[0], Pattern::Bind(t) if t.lexeme == "a"));
+                match &pats[1] {
+                    Pattern::Tuple(inner) => {
+                        assert_eq!(inner.len(), 2);
+                        assert!(matches!(&inner[0], Pattern::Bind(t) if t.lexeme == "b"));
+                        assert!(matches!(&inner[1], Pattern::Bind(t) if t.lexeme == "c"));
+                    }
+                    _ => panic!("Expected nested Tuple pattern"),
+                }
+            }
+            _ => panic!("Expected Let with nested Tuple pattern"),
+        }
+    }
+
+    #[test]
+    fn test_single_element_tuple_error() {
+        let result = parse_result("let (a) = x");
+        assert!(result.is_err());
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(msg.contains("tuple destructuring requires at least 2 bindings"), "unexpected error: {}", msg);
+    }
+
+    #[test]
+    fn test_parse_for_tuple_pattern() {
+        let stmts = parse("for (x, y) in points { }");
+        match &stmts[0] {
+            Stmt::For { pattern: Pattern::Tuple(pats), .. } => {
+                assert_eq!(pats.len(), 2);
+                assert!(matches!(&pats[0], Pattern::Bind(t) if t.lexeme == "x"));
+                assert!(matches!(&pats[1], Pattern::Bind(t) if t.lexeme == "y"));
+            }
+            _ => panic!("Expected For with Tuple pattern"),
+        }
+    }
+
+    #[test]
+    fn test_parse_const_tuple_pattern() {
+        let stmts = parse("const (WIDTH, HEIGHT) = dims");
+        match &stmts[0] {
+            Stmt::Const { pattern: Pattern::Tuple(pats), .. } => {
+                assert_eq!(pats.len(), 2);
+                assert!(matches!(&pats[0], Pattern::Bind(t) if t.lexeme == "WIDTH"));
+                assert!(matches!(&pats[1], Pattern::Bind(t) if t.lexeme == "HEIGHT"));
+            }
+            _ => panic!("Expected Const with Tuple pattern"),
+        }
     }
 }
