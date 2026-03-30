@@ -63,6 +63,12 @@ pub enum QuillError {
     #[error("target version incompatible for {package}: {message}")]
     TargetVersionIncompatible { package: String, message: String },
 
+    #[error("download failed: {url}: {message}")]
+    DownloadFailed { url: String, message: String },
+
+    #[error("server spawn failed: {message}")]
+    ServerSpawnFailed { message: String },
+
     #[error("user cancelled")]
     UserCancelled,
 }

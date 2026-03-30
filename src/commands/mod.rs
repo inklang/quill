@@ -23,6 +23,7 @@ pub mod pack;
 pub mod publish;
 pub mod remove;
 pub mod search;
+pub mod run;
 pub mod unpublish;
 pub mod update;
 pub mod why;
@@ -48,6 +49,7 @@ pub use pack::Pack;
 pub use publish::Publish;
 pub use remove::Remove;
 pub use search::Search;
+pub use run::Run;
 pub use unpublish::Unpublish;
 pub use update::Update;
 pub use why::Why;
@@ -134,6 +136,9 @@ pub async fn execute(ctx: &Context, command: &crate::cli::Commands) -> Result<()
         }
         crate::cli::Commands::Completions { shell } => {
             Completions { shell: shell.clone() }.execute(ctx).await
+        }
+        crate::cli::Commands::Run { no_watch } => {
+            Run { no_watch: *no_watch }.execute(ctx).await
         }
     }
 }

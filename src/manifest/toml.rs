@@ -48,6 +48,8 @@ pub struct RuntimeConfig {
 #[serde(rename_all = "kebab-case")]
 pub struct ServerConfig {
     pub paper: Option<String>,
+    pub jar: Option<String>,
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

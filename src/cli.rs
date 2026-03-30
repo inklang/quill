@@ -214,6 +214,13 @@ pub enum Commands {
         #[arg(value_enum, default_value = "bash")]
         shell: String,
     },
+
+    /// Build, deploy, and run a managed Paper dev server
+    Run {
+        /// Skip file watching (build + deploy + start once)
+        #[arg(long)]
+        no_watch: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
