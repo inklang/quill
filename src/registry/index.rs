@@ -105,8 +105,10 @@ pub struct RegistryPackageVersion {
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct SearchResult {
     pub name: String,
+    #[serde(default)]
     pub version: String,
-    pub description: String,
+    #[serde(default)]
+    pub description: Option<String>,
     pub score: f64,
     #[serde(default)]
     pub package_type: String,

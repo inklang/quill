@@ -452,7 +452,7 @@ async fn text_search(
         println!("{}", "-".repeat(80));
 
         for result in results.iter().take(limit) {
-            let description: String = result.description.chars().take(37).collect();
+            let description: String = result.description.as_deref().unwrap_or("").chars().take(37).collect();
             println!(
                 "{:<30} {:<10} {:.<40}",
                 result.name, result.version, description
@@ -533,7 +533,7 @@ fn render_results(f: &mut Frame, app: &SearchApp, area: Rect) {
                 .saturating_sub(name_width as u16 + ver_width as u16 + 6) as usize;
             let name = truncate(&r.name, name_width);
             let ver = truncate(&r.version, ver_width);
-            let desc = truncate(&r.description, desc_width);
+            let desc = truncate(r.description.as_deref().unwrap_or(""), desc_width);
 
             ListItem::new(Line::from(vec![
                 Span::styled(
@@ -580,7 +580,7 @@ fn render_detail(f: &mut Frame, app: &SearchApp, area: Rect) {
     f.render_widget(Clear, card);
 
     let desc_max = card.width.saturating_sub(4) as usize;
-    let desc = truncate(&pkg.description, desc_max);
+    let desc = truncate(pkg.description.as_deref().unwrap_or(""), desc_max);
 
     let lines = vec![
         Line::from(""),
