@@ -162,7 +162,7 @@ pub enum Commands {
 
     /// Search registry
     Search {
-        query: String,
+        query: Option<String>,
 
         #[arg(short, long)]
         limit: Option<usize>,
