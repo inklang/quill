@@ -1,5 +1,0 @@
-#!/bin/bash
-# Mock gradlew — creates a fake JAR for testing
-mkdir -p build/libs
-echo "fake-jar" > build/libs/ink.gradletest-0.1.0.jar
-echo "BUILD SUCCESSFUL"

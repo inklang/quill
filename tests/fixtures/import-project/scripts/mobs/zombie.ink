@@ -1,3 +1,0 @@
-fn brains() {
-  print("BRAINS!")
-}

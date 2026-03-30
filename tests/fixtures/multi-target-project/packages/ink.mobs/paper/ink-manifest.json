@@ -1,1 +1,0 @@
-{"name":"ink.mobs","version":"1.0.0","target":"paper","grammar":"grammar.ir.json","runtime":{"jar":"mobs-runtime.jar","entry":"org.ink.mobs.MobsRuntime"}}

@@ -5,7 +5,7 @@ The package manager for [Ink](https://github.com/inklang/ink) — a scripting la
 ## Install
 
 ```bash
-npm install -g @inklang/quill
+cargo install --git https://github.com/inklang/quill
 ```
 
 ## Getting started
@@ -106,4 +106,12 @@ Or set it in `~/.quillrc`:
 
 ```json
 { "token": "...", "registry": "https://lectern.inklang.org" }
+```
+
+## Development
+
+```bash
+cargo build                   # debug build
+cargo build --release         # optimized build
+cargo test                    # run tests
 ```

@@ -1,1 +1,0 @@
-{"package":"ink.test","declarations":[{"keyword":"entity","name":"identifier","inheritsBase":true,"rules":[["spawn_clause",{"type":"seq","items":[{"type":"keyword","value":"spawn"},{"type":"identifier"},{"type":"block","scope":null}]}]]}]}
