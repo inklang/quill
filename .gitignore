@@ -10,3 +10,6 @@ compiler/
 .idea/
 .vscode/
 node_modules/
+
+# Compiler-generated export metadata
+exports.json

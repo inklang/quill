@@ -7,29 +7,22 @@ use crate::cache::{CacheEntry, CacheManifest};
 use crate::commands::Command;
 use crate::context::Context;
 use crate::error::{QuillError, Result};
+use crate::exports::collect_exports;
 use crate::grammar::{parser::GrammarParser, GrammarIr};
 use crate::grammar::merge::merge_grammars;
 use crate::grammar::serializer::GrammarSerializer;
 use crate::printing_press::inklang::grammar::merge_grammars as pp_merge_grammars;
 use crate::util::target_version::resolve_target_version;
 
-/// Compile an .ink source file using an explicit MergedGrammar.
-fn compile_ink_with_grammar(
-    source: &Path,
+/// Compile an entry point .ink file with import resolution.
+fn compile_ink_entry(
+    entry: &Path,
     output: &Path,
     grammar: &crate::printing_press::inklang::grammar::MergedGrammar,
 ) -> Result<()> {
-    let source_text = std::fs::read_to_string(source)
-        .map_err(|e| QuillError::io_error(format!("failed to read source '{}'", source.display()), e))?;
-
-    let name = source
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("main");
-
-    let script = crate::printing_press::compile_with_grammar(&source_text, name, Some(grammar))
+    let script = crate::printing_press::inklang::compile_entry(entry, Some(grammar))
         .map_err(|e| QuillError::CompilerFailed {
-            script: source.to_string_lossy().into(),
+            script: entry.to_string_lossy().into(),
             stderr: e.display(),
         })?;
 
@@ -79,7 +72,6 @@ impl Command for Build {
         };
 
         // 3. Merge grammars from dependencies
-        // First, load grammars from dependency packages in node_modules
         let node_modules = ctx.project_dir.join("node_modules");
         let mut dependency_grammars: Vec<(Option<String>, GrammarIr)> = Vec::new();
 
@@ -118,7 +110,64 @@ impl Command for Build {
         let grammar_pkg = GrammarSerializer::serialize_grammar_package(&merged_grammar);
         let grammar_for_compiler = pp_merge_grammars(vec![grammar_pkg]);
 
-        // 4. Find dirty .ink files
+        // Collect grammar package names for exports
+        let grammar_packages: Vec<String> = if dependency_grammars.is_empty() {
+            vec![]
+        } else {
+            dependency_grammars.iter()
+                .filter_map(|(name, _)| name.clone())
+                .collect()
+        };
+
+        // 4. Determine entry point
+        let entry_relative = manifest.package.main.clone()
+            .or_else(|| manifest.build.as_ref().and_then(|b| b.entry.clone()))
+            .unwrap_or_else(|| "src/main.ink".to_string());
+        let entry_path = ctx.project_dir.join(&entry_relative);
+
+        if !entry_path.exists() {
+            return Err(QuillError::ManifestNotFound {
+                path: entry_path,
+            });
+        }
+
+        // 5. Compile entry point with import resolution
+        let output_dir = self.output.clone()
+            .unwrap_or_else(|| ctx.project_dir.join("target").join("ink"));
+
+        fs::create_dir_all(&output_dir)
+            .map_err(|e| QuillError::io_error("failed to create output directory", e))?;
+
+        let entry_stem = entry_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("main");
+        let output_file = output_dir.join(format!("{}.inkc", entry_stem));
+
+        compile_ink_entry(&entry_path, &output_file, &grammar_for_compiler)?;
+        println!("Compiled: {} → {}", entry_relative, output_file.display());
+
+        // 6. Generate exports.json
+        let author = manifest.package.author.clone();
+        match crate::printing_press::resolve_ast(&entry_path, Some(&grammar_for_compiler)) {
+            Ok(resolved_ast) => {
+                let exports = collect_exports(&resolved_ast, &grammar_packages, author);
+                let exports_json = serde_json::to_string_pretty(&exports)
+                    .map_err(|e| QuillError::RegistryAuth {
+                        message: format!("failed to serialize exports: {}", e),
+                    })?;
+                let exports_path = ctx.project_dir.join("exports.json");
+                fs::write(&exports_path, exports_json)
+                    .map_err(|e| QuillError::io_error("failed to write exports.json", e))?;
+                println!("Exports: {}", exports_path.display());
+            }
+            Err(e) => {
+                // Non-fatal: compilation already succeeded, exports collection is best-effort
+                eprintln!("warning: exports collection failed: {}", e.display());
+            }
+        }
+
+        // 7. Update cache
         let cache_dir = get_cache_dir()?;
         let cache_manifest_path = cache_dir.join("manifest.json");
 
@@ -133,54 +182,19 @@ impl Command for Build {
             CacheManifest::default()
         };
 
-        let dirty_files = crate::cache::dirty::find_dirty_files(
-            &ctx.project_dir.join("src"),
-            &cache_manifest,
-            false, // incremental build
-        );
-
-        // 5. Compile dirty files via compiler
-        let output_dir = self.output.clone()
-            .unwrap_or_else(|| ctx.project_dir.join("target").join("ink"));
-
-        fs::create_dir_all(&output_dir)
-            .map_err(|e| QuillError::io_error("failed to create output directory", e))?;
-
         let mut new_cache_entries: BTreeMap<String, CacheEntry> = cache_manifest.entries.clone();
+        let hash = crate::cache::dirty::hash_file(&entry_path)?;
+        new_cache_entries.insert(entry_relative.clone(), CacheEntry {
+            hash,
+            output: output_file.to_string_lossy().to_string(),
+            compiled_at: chrono_now(),
+        });
 
-        for source_file in &dirty_files {
-            let relative_path = source_file
-                .strip_prefix(ctx.project_dir.join("src"))
-                .unwrap_or(source_file);
-
-            let output_file = output_dir.join(
-                relative_path.with_extension("inkc")
-            );
-
-            fs::create_dir_all(output_file.parent().unwrap_or(&output_dir))
-                .map_err(|e| QuillError::io_error("failed to create output directory", e))?;
-
-            compile_ink_with_grammar(source_file, &output_file, &grammar_for_compiler)?;
-
-            // Update cache
-            let hash = crate::cache::dirty::hash_file(source_file)?;
-            let cache_key = format!("src/{}", relative_path.to_string_lossy().replace('\\', "/"));
-            new_cache_entries.insert(cache_key, CacheEntry {
-                hash,
-                output: output_file.to_string_lossy().to_string(),
-                compiled_at: chrono_now(),
-            });
-
-            println!("Compiled: {}", relative_path.display());
-        }
-
-        // 6. Write ink-manifest.json
+        // 8. Write ink-manifest.json
         let ink_manifest = serde_json::json!({
             "name": manifest.package.name,
             "version": manifest.package.version,
-            "entry": manifest.build.as_ref()
-                .and_then(|b| b.entry.clone())
-                .unwrap_or_else(|| "src/main.ink".to_string()),
+            "entry": entry_relative,
             "target": target_name,
             "targetVersion": target_version.map(|v| format!("{:?}", v)),
             "grammar": merged_grammar,
@@ -194,7 +208,7 @@ impl Command for Build {
         fs::write(&ink_manifest_path, manifest_json)
             .map_err(|e| QuillError::io_error("failed to write ink-manifest.json", e))?;
 
-        // 7. Update cache
+        // 9. Update cache
         let mut updated_cache = cache_manifest;
         updated_cache.entries = new_cache_entries;
         updated_cache.last_full_build = chrono_now();
