@@ -6,7 +6,7 @@ use crate::error::Result;
 use crate::registry::RegistryClient;
 
 pub struct Search {
-    pub query: String,
+    pub query: Option<String>,
     pub limit: Option<usize>,
 }
 
@@ -16,15 +16,17 @@ impl Command for Search {
         let registry_url = &ctx.registry_url;
         let client = RegistryClient::new(registry_url);
 
+        let query = self.query.as_deref().unwrap_or("");
+
         // Call registry_client.search()
-        let results = client.search(&self.query).await?;
+        let results = client.search(query).await?;
 
         let limit = self.limit.unwrap_or(results.len());
 
         if results.is_empty() {
-            println!("No packages found matching '{}'", self.query);
+            println!("No packages found matching '{}'", query);
         } else {
-            println!("Search results for '{}':", self.query);
+            println!("Search results for '{}':", query);
             println!("{:<30} {:<10} {:<40}", "Name", "Version", "Description");
             println!("{}", "-".repeat(80));
 
