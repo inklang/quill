@@ -139,6 +139,7 @@ impl Command for Build {
         let entry_path = ctx.project_dir.join(&entry_relative);
 
         if !entry_path.exists() {
+            pb.finish_and_clear();
             return Err(QuillError::ManifestNotFound {
                 path: entry_path,
             });
@@ -157,9 +158,8 @@ impl Command for Build {
             .unwrap_or("main");
         let output_file = output_dir.join(format!("{}.inkc", entry_stem));
 
-        compile_ink_entry(&entry_path, &output_file, &grammar_for_compiler).map_err(|e| {
+        compile_ink_entry(&entry_path, &output_file, &grammar_for_compiler).inspect_err(|_| {
             pb.finish_and_clear();
-            e
         })?;
         pb.set_message("Collecting exports...");
         step_done(&pb, is_tty, &format!("Compiled → {}", output_file.display()));
