@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use crate::cache::{CacheEntry, CacheManifest};
@@ -45,6 +46,10 @@ pub struct Build {
 #[async_trait]
 impl Command for Build {
     async fn execute(&self, ctx: &Context) -> Result<()> {
+        let is_tty = std::io::stdout().is_terminal();
+        let pb = make_spinner(is_tty);
+        pb.set_message("Parsing grammar...");
+
         let manifest = ctx.manifest.as_ref().ok_or_else(|| {
             QuillError::ManifestNotFound {
                 path: ctx.project_dir.join("ink-manifest.toml"),
@@ -99,12 +104,20 @@ impl Command for Build {
             imports: Vec::new(),
         });
 
+        pb.set_message("Merging dependency grammars...");
+        step_done(&pb, is_tty, "Parsed grammar");
+
         // Merge grammars
         let merged_grammar = if dependency_grammars.is_empty() {
             base_grammar
         } else {
             merge_grammars(&base_grammar, &dependency_grammars)?
         };
+
+        if !dependency_grammars.is_empty() {
+            step_done(&pb, is_tty, &format!("Merged {} dependency grammars", dependency_grammars.len()));
+        }
+        pb.set_message("Compiling...");
 
         // Serialize GrammarIr to GrammarPackage, then build MergedGrammar in-memory
         let grammar_pkg = GrammarSerializer::serialize_grammar_package(&merged_grammar);
@@ -144,8 +157,12 @@ impl Command for Build {
             .unwrap_or("main");
         let output_file = output_dir.join(format!("{}.inkc", entry_stem));
 
-        compile_ink_entry(&entry_path, &output_file, &grammar_for_compiler)?;
-        println!("Compiled: {} → {}", entry_relative, output_file.display());
+        compile_ink_entry(&entry_path, &output_file, &grammar_for_compiler).map_err(|e| {
+            pb.finish_and_clear();
+            e
+        })?;
+        pb.set_message("Collecting exports...");
+        step_done(&pb, is_tty, &format!("Compiled → {}", output_file.display()));
 
         // 6. Generate exports.json (also validates package imports against exports.json)
         let author = manifest.package.author.clone();
@@ -166,13 +183,15 @@ impl Command for Build {
                 let exports_path = ctx.project_dir.join("exports.json");
                 fs::write(&exports_path, exports_json)
                     .map_err(|e| QuillError::io_error("failed to write exports.json", e))?;
-                println!("Exports: {}", exports_path.display());
+                step_done(&pb, is_tty, "Exports collected");
             }
             Err(e) => {
                 // Non-fatal: compilation already succeeded, exports collection is best-effort
-                eprintln!("warning: exports collection failed: {}", e.display());
+                step_warn(&pb, is_tty, &format!("exports collection failed: {}", e.display()));
             }
         }
+
+        pb.set_message("Writing manifest...");
 
         // 7. Update cache
         let cache_manifest_path = cache_dir.join("manifest.json");
@@ -229,8 +248,41 @@ impl Command for Build {
         fs::write(&cache_manifest_path, cache_json)
             .map_err(|e| QuillError::io_error("failed to write cache manifest", e))?;
 
-        println!("Build complete: {}", ink_manifest_path.display());
+        pb.finish_and_clear();
+        println!("  ✓ Build complete → {}", ink_manifest_path.display());
         Ok(())
+    }
+}
+
+fn make_spinner(is_tty: bool) -> indicatif::ProgressBar {
+    use indicatif::{ProgressBar, ProgressStyle};
+    if !is_tty {
+        let pb = ProgressBar::hidden();
+        return pb;
+    }
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::with_template("  {spinner:.cyan} {msg}")
+            .unwrap()
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+    );
+    pb.enable_steady_tick(std::time::Duration::from_millis(80));
+    pb
+}
+
+fn step_done(pb: &indicatif::ProgressBar, is_tty: bool, msg: &str) {
+    if is_tty {
+        pb.println(format!("  ✓ {}", msg));
+    } else {
+        println!("  ✓ {}", msg);
+    }
+}
+
+fn step_warn(pb: &indicatif::ProgressBar, is_tty: bool, msg: &str) {
+    if is_tty {
+        pb.println(format!("  ! {}", msg));
+    } else {
+        println!("  ! {}", msg);
     }
 }
 
@@ -259,4 +311,13 @@ fn hash_grammar_ir(grammar: &GrammarIr) -> Result<String> {
     let mut hasher = Sha256::new();
     hasher.update(json.as_bytes());
     Ok(hex::encode(hasher.finalize()))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_chrono_now_is_nonempty() {
+        let ts = super::chrono_now();
+        assert!(!ts.is_empty());
+    }
 }
