@@ -147,9 +147,16 @@ impl Command for Build {
         compile_ink_entry(&entry_path, &output_file, &grammar_for_compiler)?;
         println!("Compiled: {} → {}", entry_relative, output_file.display());
 
-        // 6. Generate exports.json
+        // 6. Generate exports.json (also validates package imports against exports.json)
         let author = manifest.package.author.clone();
-        match crate::printing_press::resolve_ast(&entry_path, Some(&grammar_for_compiler)) {
+        let cache_dir = get_cache_dir()?;
+        let packages_dir = cache_dir.join("packages");
+        match crate::printing_press::resolve_ast_with_validation(
+            &entry_path,
+            Some(&grammar_for_compiler),
+            packages_dir,
+            author.clone(),
+        ) {
             Ok(resolved_ast) => {
                 let exports = collect_exports(&resolved_ast, &grammar_packages, author);
                 let exports_json = serde_json::to_string_pretty(&exports)
@@ -168,7 +175,6 @@ impl Command for Build {
         }
 
         // 7. Update cache
-        let cache_dir = get_cache_dir()?;
         let cache_manifest_path = cache_dir.join("manifest.json");
 
         let cache_manifest = if cache_manifest_path.exists() {

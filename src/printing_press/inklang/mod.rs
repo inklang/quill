@@ -250,3 +250,41 @@ pub fn resolve_ast(
     let mut resolver = import_resolver::ImportResolver::new(grammar.cloned());
     resolver.resolve(&parsed, base_dir)
 }
+
+/// Like `resolve_ast`, but also validates package imports against exports.json.
+///
+/// `packages_dir` is the directory containing installed package subdirectories
+/// (e.g. `~/.quill/cache/packages`). `importer_author` is the author of the
+/// importing package, used for @internal visibility checks.
+pub fn resolve_ast_with_validation(
+    entry_path: &std::path::Path,
+    grammar: Option<&MergedGrammar>,
+    packages_dir: std::path::PathBuf,
+    importer_author: Option<String>,
+) -> Result<Vec<ast::Stmt>, CompileError> {
+    let source = std::fs::read_to_string(entry_path)
+        .map_err(|e| CompileError::Other(
+            format!("could not read '{}': {}", entry_path.display(), e)))?;
+
+    let tokens = lexer::tokenize(&source);
+    let source_lines: Vec<String> = source.lines().map(|l| l.to_string()).collect();
+
+    let parsed = Parser::new(tokens, grammar)
+        .parse()
+        .map_err(|e| {
+            let span = e.span().unwrap_or(Span { line: 1, column: 1 });
+            CompileError::Parsing {
+                message: e.to_string(),
+                span,
+                source_lines,
+            }
+        })?;
+
+    let base_dir = entry_path.parent().unwrap_or(std::path::Path::new("."));
+    let mut resolver = import_resolver::ImportResolver::with_package_validation(
+        grammar.cloned(),
+        packages_dir,
+        importer_author,
+    );
+    resolver.resolve(&parsed, base_dir)
+}

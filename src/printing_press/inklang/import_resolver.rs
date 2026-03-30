@@ -5,6 +5,7 @@ use super::ast::Stmt;
 use super::grammar::MergedGrammar;
 use super::parser::Parser;
 use super::CompileError;
+use crate::exports::PackageExports;
 
 /// Resolves file imports at compile time.
 pub struct ImportResolver {
@@ -12,6 +13,10 @@ pub struct ImportResolver {
     resolved: HashSet<PathBuf>,
     cache: HashMap<PathBuf, Vec<Stmt>>,
     grammar: Option<MergedGrammar>,
+    /// Directory where installed packages are cached (e.g. ~/.quill/cache/packages).
+    packages_dir: Option<PathBuf>,
+    /// Author of the importing package, for @internal visibility checks.
+    importer_author: Option<String>,
 }
 
 impl ImportResolver {
@@ -21,6 +26,23 @@ impl ImportResolver {
             resolved: HashSet::new(),
             cache: HashMap::new(),
             grammar,
+            packages_dir: None,
+            importer_author: None,
+        }
+    }
+
+    pub fn with_package_validation(
+        grammar: Option<MergedGrammar>,
+        packages_dir: PathBuf,
+        importer_author: Option<String>,
+    ) -> Self {
+        Self {
+            resolving: HashSet::new(),
+            resolved: HashSet::new(),
+            cache: HashMap::new(),
+            grammar,
+            packages_dir: Some(packages_dir),
+            importer_author,
         }
     }
 
@@ -78,6 +100,21 @@ impl ImportResolver {
                     }
 
                     result.extend(final_stmts);
+                }
+                Stmt::ImportFrom { path, items } => {
+                    if let Some(packages_dir) = &self.packages_dir {
+                        let pkg_name = path.join(".");
+                        let pkg_dir = packages_dir.join(&pkg_name);
+                        validate_package_import(
+                            &pkg_name,
+                            items,
+                            &pkg_dir,
+                            // package author from exports.json
+                            None,
+                            self.importer_author.as_deref(),
+                        )?;
+                    }
+                    result.push(stmt.clone());
                 }
                 other => result.push(other.clone()),
             }
@@ -152,6 +189,98 @@ fn filter_declarations(
     }
 
     Ok(result)
+}
+
+/// Validate a package import against the package's exports.json.
+///
+/// - `pkg_name`: the package identifier (e.g. "ink.paper")
+/// - `items`: names being imported
+/// - `pkg_dir`: path to the package directory in the cache (exports.json lives here)
+/// - `pkg_author`: the package author from exports.json (passed through for testing; if None,
+///   it is read from the file)
+/// - `importer_author`: the author of the importing package
+///
+/// Returns Ok(()) if validation passes. If exports.json is absent, validation is skipped
+/// (pre-exports packages are tolerated with a warning).
+fn validate_package_import(
+    pkg_name: &str,
+    items: &[String],
+    pkg_dir: &Path,
+    _pkg_author_override: Option<&str>,
+    importer_author: Option<&str>,
+) -> Result<(), CompileError> {
+    let exports_path = pkg_dir.join("exports.json");
+
+    if !exports_path.exists() {
+        eprintln!(
+            "warning: package '{}' has no exports metadata — import validation skipped",
+            pkg_name
+        );
+        return Ok(());
+    }
+
+    let json = std::fs::read_to_string(&exports_path).map_err(|e| {
+        CompileError::Other(format!(
+            "failed to read exports for '{}': {}",
+            pkg_name, e
+        ))
+    })?;
+
+    let exports: PackageExports = serde_json::from_str(&json).map_err(|e| {
+        CompileError::Other(format!("invalid exports.json for '{}': {}", pkg_name, e))
+    })?;
+
+    for item in items {
+        check_item_visibility(pkg_name, item, &exports, importer_author)?;
+    }
+
+    Ok(())
+}
+
+fn check_item_visibility(
+    pkg_name: &str,
+    item: &str,
+    exports: &PackageExports,
+    importer_author: Option<&str>,
+) -> Result<(), CompileError> {
+    // Check classes
+    if let Some(class) = exports.classes.get(item) {
+        if class.visibility.is_internal() && !same_author(exports.author.as_deref(), importer_author) {
+            return Err(CompileError::Other(format!(
+                "'{}' from '{}' is internal and not available to this package",
+                item, pkg_name
+            )));
+        }
+        return Ok(());
+    }
+
+    // Check functions
+    if let Some(visibility) = exports.functions.get(item) {
+        if visibility.is_internal() && !same_author(exports.author.as_deref(), importer_author) {
+            return Err(CompileError::Other(format!(
+                "'{}' from '{}' is internal and not available to this package",
+                item, pkg_name
+            )));
+        }
+        return Ok(());
+    }
+
+    // Grammars are always public
+    if exports.grammars.contains(&item.to_string()) {
+        return Ok(());
+    }
+
+    Err(CompileError::Other(format!(
+        "'{}' is not exported by '{}'",
+        item, pkg_name
+    )))
+}
+
+fn same_author(pkg_author: Option<&str>, importer_author: Option<&str>) -> bool {
+    match (pkg_author, importer_author) {
+        (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
+        _ => false,
+    }
 }
 
 pub fn check_name_collisions(stmts: &[Stmt], source_name: &str) -> Result<(), CompileError> {
@@ -254,6 +383,79 @@ mod tests {
         let result = resolve_path(&subdir, "../parent_import", 1);
         std::fs::remove_file(&file_path).ok();
         std::fs::remove_dir(&subdir).ok();
+        assert!(result.is_ok());
+    }
+
+    // --- Package import validation tests ---
+
+    fn write_exports(dir: &std::path::Path, json: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join("exports.json"), json).unwrap();
+    }
+
+    #[test]
+    fn test_package_import_public_class_allowed() {
+        let tmp = std::env::temp_dir().join("quill_test_pkg_pub");
+        write_exports(&tmp, r#"{"version":1,"classes":{"Wallet":{"visibility":"public","methods":["get_balance"]}},"functions":{},"grammars":[]}"#);
+        let result = validate_package_import("mypkg", &["Wallet".to_string()], &tmp, None, None);
+        std::fs::remove_dir_all(&tmp).ok();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_package_import_unknown_name_rejected() {
+        let tmp = std::env::temp_dir().join("quill_test_pkg_unk");
+        write_exports(&tmp, r#"{"version":1,"classes":{},"functions":{},"grammars":[]}"#);
+        let result = validate_package_import("mypkg", &["Ghost".to_string()], &tmp, None, None);
+        std::fs::remove_dir_all(&tmp).ok();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Ghost"));
+    }
+
+    #[test]
+    fn test_package_import_internal_class_blocked_for_other_author() {
+        let tmp = std::env::temp_dir().join("quill_test_pkg_int");
+        write_exports(&tmp, r#"{"version":1,"author":"alice","classes":{"Ledger":{"visibility":"internal","methods":[]}},"functions":{},"grammars":[]}"#);
+        let result = validate_package_import("mypkg", &["Ledger".to_string()], &tmp, Some("alice"), Some("bob"));
+        std::fs::remove_dir_all(&tmp).ok();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("internal"));
+    }
+
+    #[test]
+    fn test_package_import_internal_class_allowed_for_same_author() {
+        let tmp = std::env::temp_dir().join("quill_test_pkg_same");
+        write_exports(&tmp, r#"{"version":1,"author":"alice","classes":{"Ledger":{"visibility":"internal","methods":[]}},"functions":{},"grammars":[]}"#);
+        let result = validate_package_import("mypkg", &["Ledger".to_string()], &tmp, Some("alice"), Some("alice"));
+        std::fs::remove_dir_all(&tmp).ok();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_package_import_internal_function_blocked() {
+        let tmp = std::env::temp_dir().join("quill_test_pkg_ifn");
+        write_exports(&tmp, r#"{"version":1,"author":"alice","classes":{},"functions":{"secret":"internal"},"grammars":[]}"#);
+        let result = validate_package_import("mypkg", &["secret".to_string()], &tmp, Some("alice"), Some("bob"));
+        std::fs::remove_dir_all(&tmp).ok();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_package_import_grammar_allowed() {
+        let tmp = std::env::temp_dir().join("quill_test_pkg_gram");
+        write_exports(&tmp, r#"{"version":1,"classes":{},"functions":{},"grammars":["ink.paper"]}"#);
+        let result = validate_package_import("mypkg", &["ink.paper".to_string()], &tmp, None, None);
+        std::fs::remove_dir_all(&tmp).ok();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_package_import_no_exports_json_is_ok() {
+        let tmp = std::env::temp_dir().join("quill_test_pkg_noexports");
+        std::fs::create_dir_all(&tmp).unwrap();
+        // No exports.json — simulate pre-exports package, should pass with warning
+        let result = validate_package_import("mypkg", &["Anything".to_string()], &tmp, None, None);
+        std::fs::remove_dir_all(&tmp).ok();
         assert!(result.is_ok());
     }
 }

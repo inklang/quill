@@ -2,4 +2,4 @@
 pub mod inklang;
 
 // Re-export compile functions for use by quill commands
-pub use inklang::{compile, compile_with_grammar, compile_entry, resolve_ast, SerialScript};
+pub use inklang::{compile, compile_with_grammar, compile_entry, resolve_ast, resolve_ast_with_validation, SerialScript};
