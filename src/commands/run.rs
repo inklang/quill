@@ -16,9 +16,16 @@ use crate::manifest::toml::PackageManifest;
 // Public helper functions (separated for testability)
 // ---------------------------------------------------------------------------
 
-/// Return the home directory using the same pattern as `build.rs`.
+/// Return the home directory, handling both Unix (`$HOME`) and Windows (`%USERPROFILE%`).
 fn home_dir() -> PathBuf {
-    PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| ".".to_string()))
+    let home = if cfg!(windows) {
+        std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .unwrap_or_else(|_| ".".to_string())
+    } else {
+        std::env::var("HOME").unwrap_or_else(|_| ".".to_string())
+    };
+    PathBuf::from(home)
 }
 
 /// Resolve the server directory from manifest config.
@@ -156,6 +163,7 @@ impl Run {
         &self,
         manifest: &PackageManifest,
         server_dir: &Path,
+        client: &reqwest::Client,
     ) -> Result<PathBuf> {
         // If user specified a custom JAR, use it directly.
         if let Some(ref server) = manifest.server {
@@ -205,7 +213,6 @@ impl Run {
             version
         );
 
-        let client = reqwest::Client::new();
         let resp = client
             .get(&builds_url)
             .send()
@@ -302,7 +309,7 @@ impl Run {
     }
 
     /// Download (or locate cached) Ink plugin JAR into the server.
-    async fn download_ink_jar(&self, server_dir: &Path) -> Result<PathBuf> {
+    async fn download_ink_jar(&self, server_dir: &Path, client: &reqwest::Client) -> Result<PathBuf> {
         let ink_jar_path = server_dir.join("plugins").join("Ink.jar");
 
         if ink_jar_path.exists() {
@@ -327,7 +334,6 @@ impl Run {
 
         println!("Downloading Ink plugin...");
 
-        let client = reqwest::Client::new();
         let resp = client
             .get(&download_url)
             .send()
@@ -443,7 +449,7 @@ white-list=false
         let child = TokioCommand::new("java")
             .arg("-jar")
             .arg(server_jar)
-            .arg("nogui")
+            .arg("--nogui")
             .current_dir(server_dir)
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
@@ -497,11 +503,12 @@ impl Command for Run {
         println!("Server directory: {}", server_dir.display());
 
         // 3. Download / resolve Paper JAR
-        let server_jar = self.resolve_paper_jar(manifest, &server_dir).await?;
+        let http = reqwest::Client::new();
+        let server_jar = self.resolve_paper_jar(manifest, &server_dir, &http).await?;
         println!("Paper JAR: {}", server_jar.display());
 
         // 4. Download Ink plugin
-        let _ink_jar = self.download_ink_jar(&server_dir).await?;
+        let _ink_jar = self.download_ink_jar(&server_dir, &http).await?;
         println!("Ink plugin ready.");
 
         // 5. Write eula.txt and server.properties
