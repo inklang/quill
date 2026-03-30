@@ -300,6 +300,10 @@ impl RegistryClient {
             }
         }
 
+        file.flush()
+            .await
+            .map_err(|e| QuillError::io_error("failed to flush download file", e))?;
+
         Ok(())
     }
 }
@@ -325,7 +329,6 @@ pub struct PackageInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use tempfile::tempdir;
     use wiremock::matchers::method;
     use wiremock::{Mock, MockServer, ResponseTemplate};
