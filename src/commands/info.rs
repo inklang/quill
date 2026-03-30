@@ -44,6 +44,37 @@ impl Command for Info {
             println!("Targets: {}", targets.join(", "));
         }
 
+        if let Some(exports) = &info.exports {
+            println!("\nExports:");
+            if !exports.classes.is_empty() {
+                println!("  Classes:");
+                for (name, class) in &exports.classes {
+                    let vis = if class.visibility.is_internal() { " (internal)" } else { "" };
+                    println!("    {}{}", name, vis);
+                    for method in &class.methods {
+                        println!("      .{}()", method);
+                    }
+                    for method in &class.internal_methods {
+                        println!("      .{}() (internal)", method);
+                    }
+                }
+            }
+            if !exports.functions.is_empty() {
+                println!("  Functions:");
+                for (name, vis) in &exports.functions {
+                    use crate::exports::Visibility;
+                    let vis_label = if matches!(vis, Visibility::Internal) { " (internal)" } else { "" };
+                    println!("    {}{}", name, vis_label);
+                }
+            }
+            if !exports.grammars.is_empty() {
+                println!("  Grammars:");
+                for g in &exports.grammars {
+                    println!("    {}", g);
+                }
+            }
+        }
+
         Ok(())
     }
 }

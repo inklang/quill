@@ -2,6 +2,8 @@ use std::collections::BTreeMap;
 
 use semver::{Version, VersionReq};
 
+use crate::exports::PackageExports;
+
 /// Registry index structure
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 pub struct RegistryIndex {
@@ -99,6 +101,8 @@ pub struct RegistryPackageVersion {
     pub checksum: Option<String>,
     #[serde(default)]
     pub package_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exports: Option<PackageExports>,
 }
 
 /// Search result from the registry
@@ -112,4 +116,6 @@ pub struct SearchResult {
     pub score: f64,
     #[serde(default)]
     pub package_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exports: Option<PackageExports>,
 }

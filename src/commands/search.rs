@@ -457,6 +457,18 @@ async fn text_search(
                 "{:<30} {:<10} {:.<40}",
                 result.name, result.version, description
             );
+            if let Some(exports) = &result.exports {
+                let class_count = exports.classes.len();
+                let fn_count = exports.functions.len();
+                let grammar_count = exports.grammars.len();
+                if class_count + fn_count + grammar_count > 0 {
+                    let mut parts = Vec::new();
+                    if class_count > 0 { parts.push(format!("{} classes", class_count)); }
+                    if fn_count > 0 { parts.push(format!("{} functions", fn_count)); }
+                    if grammar_count > 0 { parts.push(format!("{} grammars", grammar_count)); }
+                    println!("  {:<30} Exports: {}", "", parts.join(", "));
+                }
+            }
         }
 
         println!("\n{} packages found", results.len());

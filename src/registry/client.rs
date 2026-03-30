@@ -3,6 +3,8 @@ use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::path::Path;
 
+use crate::exports::PackageExports;
+
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -300,4 +302,6 @@ pub struct PackageInfo {
     pub checksum: Option<String>,
     #[serde(default)]
     pub package_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exports: Option<PackageExports>,
 }

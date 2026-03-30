@@ -31,6 +31,12 @@ impl Command for Publish {
 
         let auth = AuthContext::from_rc(&rc)?;
 
+        // Warn if exports.json is missing (should run `quill build` first)
+        let exports_path = ctx.project_dir.join("exports.json");
+        if !exports_path.exists() {
+            eprintln!("warning: exports.json not found — run 'quill build' before publishing to generate export metadata");
+        }
+
         // Create tarball of project
         let tarball_name = format!("{}-{}.tar.gz",
             manifest.package.name,
