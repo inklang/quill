@@ -9,6 +9,7 @@ pub mod cache;
 pub mod grammar;
 pub mod util;
 pub mod printing_press;
+pub mod exports;
 
 mod commands;
 
