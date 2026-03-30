@@ -760,10 +760,8 @@ impl AstLowerer {
     /// Lower a table declaration.
     fn lower_table(&mut self, name: &super::token::Token, fields: &[super::ast::TableField]) {
         let table_name = name.lexeme.clone();
-        let field_names_list: Vec<String> = fields.iter().map(|f| f.name.lexeme.clone()).collect();
-        let key_field_idx = fields.iter().position(|f| f.is_key).unwrap_or(0);
 
-        // Step 1: db.registerTable("TableName", ["field1", "field2"], keyIndex)
+        // Step 1: db.registerTable("TableName", [fieldDescriptorMap, ...])
         let db_reg = self.fresh_reg();
         self.emit(IrInstr::LoadGlobal {
             dst: db_reg,
@@ -774,25 +772,80 @@ impl AstLowerer {
         let table_name_reg = self.fresh_reg();
         self.emit(IrInstr::LoadImm { dst: table_name_reg, index: table_name_idx });
 
-        // Build array of field name strings
-        let field_regs: Vec<usize> = field_names_list
+        // Build array of typed field descriptor maps (EnumValue instances)
+        let enum_value_class_reg = self.fresh_reg();
+        self.emit(IrInstr::LoadGlobal {
+            dst: enum_value_class_reg,
+            name: "EnumValue".to_string(),
+        });
+
+        let field_map_regs: Vec<usize> = fields
             .iter()
-            .map(|fname| {
-                let r = self.fresh_reg();
-                let idx = self.add_constant(Value::String(fname.clone()));
-                self.emit(IrInstr::LoadImm { dst: r, index: idx });
-                r
+            .map(|field| {
+                let field_map_reg = self.fresh_reg();
+                self.emit(IrInstr::NewInstance {
+                    dst: field_map_reg,
+                    class_reg: enum_value_class_reg,
+                    args: vec![],
+                });
+
+                // name
+                let name_str_idx = self.add_constant(Value::String(field.name.lexeme.clone()));
+                let name_str_reg = self.fresh_reg();
+                self.emit(IrInstr::LoadImm { dst: name_str_reg, index: name_str_idx });
+                self.emit(IrInstr::SetField {
+                    obj: field_map_reg,
+                    name: "name".to_string(),
+                    src: name_str_reg,
+                });
+
+                // type
+                let type_str = field.type_.clone().unwrap_or_else(|| "string".to_string());
+                let type_str_idx = self.add_constant(Value::String(type_str));
+                let type_str_reg = self.fresh_reg();
+                self.emit(IrInstr::LoadImm { dst: type_str_reg, index: type_str_idx });
+                self.emit(IrInstr::SetField {
+                    obj: field_map_reg,
+                    name: "type".to_string(),
+                    src: type_str_reg,
+                });
+
+                // isKey
+                let is_key_idx = self.add_constant(Value::Boolean(field.is_key));
+                let is_key_reg = self.fresh_reg();
+                self.emit(IrInstr::LoadImm { dst: is_key_reg, index: is_key_idx });
+                self.emit(IrInstr::SetField {
+                    obj: field_map_reg,
+                    name: "isKey".to_string(),
+                    src: is_key_reg,
+                });
+
+                // foreignTable (null or the target table name)
+                let foreign_table_str = field.type_.as_deref()
+                    .and_then(|t| t.strip_prefix("foreign:"))
+                    .map(|s| s.to_string());
+                let foreign_val = match foreign_table_str {
+                    Some(ref s) => Value::String(s.clone()),
+                    None => Value::Null,
+                };
+                let foreign_idx = self.add_constant(foreign_val);
+                let foreign_reg = self.fresh_reg();
+                self.emit(IrInstr::LoadImm { dst: foreign_reg, index: foreign_idx });
+                self.emit(IrInstr::SetField {
+                    obj: field_map_reg,
+                    name: "foreignTable".to_string(),
+                    src: foreign_reg,
+                });
+
+                field_map_reg
             })
             .collect();
+
         let fields_reg = self.fresh_reg();
         self.emit(IrInstr::NewArray {
             dst: fields_reg,
-            elements: field_regs,
+            elements: field_map_regs,
         });
-
-        let key_idx_idx = self.add_constant(Value::Int(key_field_idx as i64));
-        let key_idx_reg = self.fresh_reg();
-        self.emit(IrInstr::LoadImm { dst: key_idx_reg, index: key_idx_idx });
 
         let register_table_method_reg = self.fresh_reg();
         self.emit(IrInstr::GetField {
@@ -805,7 +858,7 @@ impl AstLowerer {
         self.emit(IrInstr::Call {
             dst: call_dst,
             func: register_table_method_reg,
-            args: vec![table_name_reg, fields_reg, key_idx_reg],
+            args: vec![table_name_reg, fields_reg],
         });
 
         // Step 2: TableName = db.from("TableName")

@@ -528,7 +528,16 @@ impl<'a> Parser<'a> {
             let is_key = self.match_token(&[TokenType::KwKey]);
             let field_name = self.consume(&TokenType::Identifier, "Expected field name")?;
             let field_type = if self.match_token(&[TokenType::Colon]) {
-                Some(self.parse_type()?.lexeme)
+                let type_token = self.parse_type()?;
+                // Handle "foreign:TableName" composite type
+                let type_str = if type_token.lexeme == "foreign" && self.check(&TokenType::Colon) {
+                    self.advance(); // consume ':'
+                    let target = self.consume(&TokenType::Identifier, "Expected table name after 'foreign:'")?;
+                    format!("foreign:{}", target.lexeme)
+                } else {
+                    type_token.lexeme
+                };
+                Some(type_str)
             } else {
                 None
             };
@@ -2401,6 +2410,19 @@ mod tests {
         let stmts = parse("table Users { key id: int, name: string }");
         match &stmts[0] {
             Stmt::Table { name, .. } => assert_eq!(name.lexeme, "Users"),
+            _ => panic!("Expected Table statement"),
+        }
+    }
+
+    #[test]
+    fn test_parse_table_foreign_field() {
+        let stmts = parse("table Post { key id: int, author: foreign:User }");
+        match &stmts[0] {
+            Stmt::Table { name, fields } => {
+                assert_eq!(name.lexeme, "Post");
+                let author = fields.iter().find(|f| f.name.lexeme == "author").expect("author field");
+                assert_eq!(author.type_.as_deref(), Some("foreign:User"));
+            }
             _ => panic!("Expected Table statement"),
         }
     }
