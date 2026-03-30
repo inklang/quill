@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use crate::audit::{BytecodeScanner, OsvClient, Severity};
@@ -11,34 +12,42 @@ pub struct Audit;
 #[async_trait]
 impl Command for Audit {
     async fn execute(&self, ctx: &Context) -> Result<()> {
-        println!("Auditing project for vulnerabilities...");
+        let is_tty = std::io::stdout().is_terminal();
 
         let mut issues = Vec::new();
+
+        println!("  Scanning bytecode...");
 
         // Scan bytecode files
         let bytecode_issues = scan_bytecode(ctx).await?;
         issues.extend(bytecode_issues);
 
         // Scan dependencies via OSV
+        let pkg_count = ctx.lockfile.as_ref().map(|lf| lf.packages.len()).unwrap_or(0);
+        println!("  Scanning dependencies ({} packages)...", pkg_count);
+
         let osv_issues = scan_dependencies(ctx).await?;
         issues.extend(osv_issues);
 
         if issues.is_empty() {
-            println!("No vulnerabilities found.");
+            println!("  \u{2713} No vulnerabilities found");
             return Ok(());
         }
 
         // Report issues
-        println!("\nFound {} vulnerability(ies):", issues.len());
+        println!("\n  Found {} vulnerability(ies):\n", issues.len());
         for issue in &issues {
-            println!("\n[{}] {}", issue.severity, issue.id);
-            println!("  Summary: {}", issue.summary);
-            if !issue.references.is_empty() {
-                println!("  References:");
-                for r in &issue.references {
-                    println!("    - {}", r);
-                }
+            print!("  ");
+            print_severity_badge(&issue.severity, is_tty);
+            println!(" {}", issue.id);
+            if let Some(pkg) = &issue.package {
+                println!("    {}", pkg);
             }
+            println!("    {}", issue.summary);
+            for r in &issue.references {
+                println!("    {}", r);
+            }
+            println!();
         }
 
         Err(QuillError::VulnerabilitiesFound { count: issues.len() })
@@ -51,6 +60,37 @@ struct VulnerabilityIssue {
     summary: String,
     references: Vec<String>,
     package: Option<String>,
+}
+
+fn print_severity_badge(severity: &str, is_tty: bool) {
+    if !is_tty {
+        print!("[{}]", severity.to_uppercase());
+        return;
+    }
+    use crossterm::execute;
+    use crossterm::style::{Attribute, Color, Print, ResetColor, SetAttribute, SetForegroundColor};
+    let color = match severity {
+        "Critical" => Color::Red,
+        "High" => Color::Red,
+        "Medium" => Color::Yellow,
+        "Low" => Color::Blue,
+        _ => Color::DarkGrey,
+    };
+    let bold = severity == "Critical";
+    let mut stdout = std::io::stdout();
+    if bold {
+        execute!(stdout, SetAttribute(Attribute::Bold)).unwrap_or(());
+    }
+    execute!(
+        stdout,
+        SetForegroundColor(color),
+        Print(format!("[{}]", severity.to_uppercase())),
+        ResetColor,
+    )
+    .unwrap_or(());
+    if bold {
+        execute!(stdout, SetAttribute(Attribute::Reset)).unwrap_or(());
+    }
 }
 
 async fn scan_bytecode(ctx: &Context) -> Result<Vec<VulnerabilityIssue>> {
@@ -154,6 +194,18 @@ fn find_inkc_files(dir: &Path, results: &mut Vec<PathBuf>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_print_severity_badge_non_tty() {
+        // Non-TTY path is pure formatting — verify it doesn't panic
+        // and that the badge text is correct by capturing via a wrapper approach.
+        // Since print_severity_badge writes to stdout, we just call it and confirm no panic.
+        print_severity_badge("Critical", false);
+        print_severity_badge("High", false);
+        print_severity_badge("Medium", false);
+        print_severity_badge("Low", false);
+        print_severity_badge("Unknown", false);
+    }
 
     #[test]
     fn test_vulnerability_issue_has_package_field() {
