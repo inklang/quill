@@ -33,18 +33,19 @@ No `@public` or `@export` annotation is needed. Unannotated items are public by 
 
 ### Scope of `@internal`
 
-- On a **class**: the class itself is internal. All its methods follow the class visibility but are individually listed as public/internal.
-- On a **method**: only that method is internal. The class remains public.
+- On a **class**: the class itself is internal. When a class is internal, all its methods are implicitly internal regardless of individual annotations. The class's `methods` array lists all methods (no separate `internal_methods` — the class gate already restricts access).
+- On a **method** within a public class: only that method is internal, listed under `internal_methods`.
 - On a **function**: the function is internal.
 
 ## Compiler-Generated `exports.json`
 
-`quill build` produces `exports.json` in the build output directory alongside the compiled `.inkc` bytecode.
+`quill build` produces `exports.json` in the project root (not inside `target/`). This ensures it's picked up by the publish tarball walker, which excludes `target/`.
 
 ### Format
 
 ```json
 {
+  "version": 1,
   "classes": {
     "Wallet": {
       "visibility": "public",
@@ -53,8 +54,7 @@ No `@public` or `@export` annotation is needed. Unannotated items are public by 
     },
     "Ledger": {
       "visibility": "internal",
-      "methods": ["reconcile"],
-      "internal_methods": []
+      "methods": ["reconcile"]
     }
   },
   "functions": {
@@ -65,37 +65,50 @@ No `@public` or `@export` annotation is needed. Unannotated items are public by 
 }
 ```
 
+The top-level `version` field enables future format evolution. Consumers check this field before parsing.
+
 ### Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
+| `version` | `u32` | Format version, currently `1` |
 | `classes` | `Map<String, ClassExport>` | Exported classes with visibility and method lists |
 | `functions` | `Map<String, Visibility>` | Top-level functions with visibility |
-| `grammars` | `Vec<String>` | Grammar rule names contributed by this package |
+| `grammars` | `Vec<String>` | Grammar namespace identifiers contributed by this package |
 
-**ClassExport:**
+**ClassExport (public class):**
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `visibility` | `"public"` or `"internal"` | Whether the class is public or internal |
 | `methods` | `Vec<String>` | Public method names |
-| `internal_methods` | `Vec<String>` | Internal method names |
+| `internal_methods` | `Vec<String>` | Internal method names (only meaningful on public classes) |
+
+**ClassExport (internal class):**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `visibility` | `"internal"` | The class is internal |
+| `methods` | `Vec<String>` | All method names (no `internal_methods` key — the class gate already restricts access) |
 
 ### Grammar Detection
 
-The compiler reads the `[grammar]` section of `quill.toml` and the grammar source files to determine which grammar rules the package contributes. These are listed under `grammars` in `exports.json`.
+The `grammars` array lists grammar namespace identifiers — the name declared in the grammar source file (e.g., `grammar economy;` produces the identifier `"economy"`). When a package has no grammar declarations, the array is empty.
 
-### Method Listing
+## Author Matching for `@internal`
 
-Each class entry lists both public and internal methods separately:
-- `methods`: public methods available to all consumers
-- `internal_methods`: methods restricted to same-author consumers
+Visibility checks compare the importing package's author against the exporting package's author. Authorship is determined by:
 
-This gives consumers a complete picture of the class API even if some methods are internal, which helps with documentation, IDE support, and search.
+1. The registry username associated with the published package (from the auth token used during `quill publish`).
+2. Fallback: the `package.author` field in `quill.toml`.
+
+**When author is missing**: If the exporting package has no author (no registry username and no `package.author`), all `@internal` items are treated as public. If the importing package has no author, it fails the same-author check and cannot access internal items.
+
+**Rule**: `@internal` is a best-effort namespace convention, not a security boundary. It prevents accidental misuse across different authors, not adversarial access.
 
 ## Publishing Flow
 
-`quill publish` includes `exports.json` in the published tarball. The registry indexes export data so that:
+`quill publish` includes `exports.json` from the project root in the published tarball. The registry indexes export data so that:
 
 - `quill search` can show what a package provides (classes, functions, grammars)
 - `quill info <package>` displays the full API surface
@@ -103,27 +116,49 @@ This gives consumers a complete picture of the class API even if some methods ar
 
 ### Registry Index Entry
 
-The `RegistryPackageVersion` struct gains an optional `exports` field containing the `exports.json` data, indexed for search.
+The `RegistryPackageVersion` struct gains an optional `exports` field:
+
+```rust
+pub struct RegistryPackageVersion {
+    pub version: String,
+    pub url: String,
+    pub dependencies: BTreeMap<String, String>,
+    pub description: Option<String>,
+    pub homepage: Option<String>,
+    pub targets: Option<Vec<String>>,
+    pub checksum: Option<String>,
+    pub package_type: String,
+    // New field:
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exports: Option<PackageExports>,
+}
+```
+
+The `PackageExports` struct mirrors the `exports.json` format with `classes`, `functions`, and `grammars` fields. Uses `#[serde(default)]` for backward compatibility with existing packages that lack `exports`.
 
 ## Consuming Exports
 
 ### Import Syntax
 
-Packages explicitly import what they need from dependencies:
+Packages use the existing `import ... from` syntax to import specific items from dependencies:
 
 ```ink
-use economy::{Wallet, format_currency}
+import Wallet, format_currency from economy
 ```
+
+This maps to the existing `Stmt::ImportFrom` AST node with `path = "economy"` and `items = ["Wallet", "format_currency"]`. No new syntax or keywords are needed — the compiler extends the existing import resolution to validate against `exports.json` for package-level imports (as opposed to file-level imports which use `import ... from "./path"`).
 
 ### Compile-Time Validation
 
-The compiler validates imports against dependency `exports.json` files at build time:
+The import resolver is extended to handle `Stmt::ImportFrom` with a non-file path (i.e., a package name). For package imports:
 
-1. Resolve the import path to a dependency package
-2. Look up the dependency's `exports.json` from the cache
-3. Verify the imported item exists in `classes`, `functions`, or `grammars`
-4. Check visibility: if the item is `internal`, verify the importing package shares the same author (matched by registry username or `package.author` field)
+1. Resolve the import path to a dependency package from `quill.toml` `[dependencies]`
+2. Load the dependency's `exports.json` from the package cache (`~/.quill/cache/<pkg>/`)
+3. Verify each imported item exists in `classes`, `functions`, or `grammars`
+4. Check visibility: if the item is `internal`, verify the importing package shares the same author
 5. Emit a compile error if the import doesn't resolve or visibility check fails
+
+The lockfile guarantees the cache contains the correct resolved version of each dependency.
 
 ### Error Cases
 
@@ -145,37 +180,39 @@ type = "library"
 ink.paper = "^1.0.0"
 ```
 
-The `exports.json` file is added to `.gitignore` by default since it's a build artifact, similar to `quill.lock`.
+The `exports.json` file is added to `.gitignore` by default since it's a build artifact.
 
 ## File Locations
 
 | File | Location | Generated |
 |------|----------|-----------|
-| `exports.json` | Build output directory (`target/` or `build/`) | Yes, by `quill build` |
-| `exports.json` | Package cache (`~/.quill/cache/<pkg>/`) | Yes, downloaded from registry |
-| `exports.json` | Published tarball root | Yes, included by `quill publish` |
+| `exports.json` | Project root (next to `quill.toml`) | Yes, by `quill build` |
+| `exports.json` | Package cache (`~/.quill/cache/<pkg>/`) | Downloaded from registry on install |
+| `exports.json` | Published tarball root | Included by `quill publish` from project root |
+
+Note: `exports.json` lives in the project root (not `target/`) because `quill publish` excludes `target/` from the tarball.
 
 ## Implementation Scope
 
 ### Compiler (printing_press)
 
-1. Add `@internal` annotation recognition in the lexer/parser
+1. Add `@internal` annotation recognition in the existing `parse_annotations` function
 2. Add `internal: bool` field to AST nodes for class, function, and method declarations
 3. After compilation, walk the AST to collect all top-level classes and functions
-4. Generate `exports.json` from the collected data
-5. Include grammar contributions from the `[grammar]` config and grammar source files
+4. Generate `exports.json` (version 1) from the collected data
+5. Include grammar namespace identifiers from grammar source files
 
 ### CLI (quill)
 
-1. `quill build` — trigger `exports.json` generation as a build step
-2. `quill publish` — include `exports.json` in the tarball, send to registry
+1. `quill build` — generate `exports.json` in the project root as a build step
+2. `quill publish` — include project-root `exports.json` in the tarball, send to registry
 3. `quill info <package>` — display exports from cached `exports.json`
 4. `quill search` — show export data in search results (class count, function count, grammar names)
 
-### Compiler Import Validation
+### Import Resolver Extension
 
-1. During compilation, resolve `use` statements to dependency packages
-2. Load dependency `exports.json` from cache
+1. Extend `import_resolver.rs` to handle `Stmt::ImportFrom` with a package path (non-file path)
+2. Load dependency `exports.json` from cache during resolution
 3. Validate imported items exist and pass visibility checks
 4. Report errors for invalid imports
 
@@ -184,3 +221,4 @@ The `exports.json` file is added to `.gitignore` by default since it's a build a
 1. Accept `exports.json` as part of publish payload
 2. Index export data for search (class names, function names, grammar names)
 3. Include exports in package metadata responses
+4. Add `exports` column/field to the registry index schema
