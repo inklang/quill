@@ -2371,4 +2371,36 @@ mod tests {
         assert!(lowerer.locals.contains_key("b"));
         assert!(lowerer.locals.contains_key("x"));
     }
+
+    #[test]
+    fn test_lower_const_destructuring() {
+        // const (WIDTH, HEIGHT) = dims
+        // All destructured names must end up in const_locals, not just locals.
+        let mut lowerer = AstLowerer::new();
+        lowerer.locals.insert("dims".to_string(), 0);
+
+        let stmt = Stmt::Const {
+            pattern: Pattern::Tuple(vec![
+                Pattern::Bind(make_token(TokenType::Identifier, "WIDTH")),
+                Pattern::Bind(make_token(TokenType::Identifier, "HEIGHT")),
+            ]),
+            type_annot: None,
+            value: Expr::Variable(make_token(TokenType::Identifier, "dims")),
+        };
+        lowerer.lower(&[stmt]);
+
+        // Both names must be reachable as locals (used at runtime).
+        assert!(lowerer.locals.contains_key("WIDTH"), "WIDTH should be in locals");
+        assert!(lowerer.locals.contains_key("HEIGHT"), "HEIGHT should be in locals");
+
+        // And both must be marked as const so mutation is rejected.
+        assert!(
+            lowerer.const_locals.contains("WIDTH"),
+            "WIDTH should be in const_locals"
+        );
+        assert!(
+            lowerer.const_locals.contains("HEIGHT"),
+            "HEIGHT should be in const_locals"
+        );
+    }
 }

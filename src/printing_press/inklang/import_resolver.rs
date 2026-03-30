@@ -151,14 +151,12 @@ fn declaration_name(stmt: &Stmt) -> Option<&str> {
         Stmt::Fn { name, .. } => Some(&name.lexeme),
         Stmt::Let { pattern: Pattern::Bind(name), .. } => Some(&name.lexeme),
         Stmt::Const { pattern: Pattern::Bind(name), .. } => Some(&name.lexeme),
-        // Non-Bind patterns (Tuple, Map, Wildcard) return None intentionally.
-        // Top-level destructuring lets/consts export their individual bindings
-        // through their Bind leaves, which are matched by the arms above when
-        // each binding is looked up by name.  There is no single canonical
-        // export name for a destructuring pattern, so callers that need all
-        // exported names from such a statement must iterate the pattern's
-        // children themselves.  Returning None here is correct, not an
-        // oversight.
+        // Non-Bind patterns (Tuple, Map, Wildcard) fall through to the `_ => None`
+        // arm and are invisible to this function.  This is a known limitation:
+        // top-level destructuring let/const statements (e.g. `let (a, b) = x`)
+        // are not supported by the selective import system — `import { a } from
+        // "./file"` will not find `a` even if the file contains `let (a, b) = x`.
+        // Only simple `let a = …` / `const a = …` bindings are selectable.
         Stmt::Class { name, .. } => Some(&name.lexeme),
         Stmt::Enum { name, .. } => Some(&name.lexeme),
         Stmt::GrammarDecl { name, .. } => Some(name),
