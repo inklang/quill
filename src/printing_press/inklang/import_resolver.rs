@@ -151,6 +151,14 @@ fn declaration_name(stmt: &Stmt) -> Option<&str> {
         Stmt::Fn { name, .. } => Some(&name.lexeme),
         Stmt::Let { pattern: Pattern::Bind(name), .. } => Some(&name.lexeme),
         Stmt::Const { pattern: Pattern::Bind(name), .. } => Some(&name.lexeme),
+        // Non-Bind patterns (Tuple, Map, Wildcard) return None intentionally.
+        // Top-level destructuring lets/consts export their individual bindings
+        // through their Bind leaves, which are matched by the arms above when
+        // each binding is looked up by name.  There is no single canonical
+        // export name for a destructuring pattern, so callers that need all
+        // exported names from such a statement must iterate the pattern's
+        // children themselves.  Returning None here is correct, not an
+        // oversight.
         Stmt::Class { name, .. } => Some(&name.lexeme),
         Stmt::Enum { name, .. } => Some(&name.lexeme),
         Stmt::GrammarDecl { name, .. } => Some(name),

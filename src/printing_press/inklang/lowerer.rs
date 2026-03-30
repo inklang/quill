@@ -25,6 +25,39 @@ pub struct LoweredResult {
     pub arity: usize,
 }
 
+/// Collect all binding names (non-wildcard leaves) from a pattern.
+///
+/// Used by `check_duplicate_bindings` to detect repeated names.
+fn collect_bindings(pattern: &Pattern) -> Vec<&str> {
+    match pattern {
+        Pattern::Bind(tok) => vec![tok.lexeme.as_str()],
+        Pattern::Wildcard => vec![],
+        Pattern::Tuple(patterns) => patterns.iter().flat_map(collect_bindings).collect(),
+        Pattern::Map(fields) => fields
+            .iter()
+            .map(|(field, rename)| rename.as_ref().unwrap_or(field).lexeme.as_str())
+            .collect(),
+    }
+}
+
+/// Check that no name appears more than once in a pattern.
+///
+/// Returns `Err` containing the first duplicate found, or `Ok(())` if the
+/// pattern is valid.
+fn check_duplicate_bindings(pattern: &Pattern) -> Result<(), super::CompileError> {
+    let bindings = collect_bindings(pattern);
+    let mut seen = HashSet::new();
+    for name in bindings {
+        if !seen.insert(name) {
+            return Err(super::CompileError::Other(format!(
+                "duplicate binding '{}' in destructuring pattern",
+                name
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// AST lowerer - transforms AST into IR.
 #[derive(Debug, Clone)]
 pub struct AstLowerer {
@@ -128,8 +161,11 @@ impl AstLowerer {
                 if let Pattern::Bind(name) = pattern {
                     self.lower_var(name, Some(value));
                 } else {
-                    // Full pattern support added in Chunk 3
-                    panic!("destructuring patterns not yet lowered");
+                    check_duplicate_bindings(pattern)
+                        .unwrap_or_else(|e| panic!("{}", e));
+                    let dst = self.fresh_reg();
+                    let src = self.lower_expr(value, dst);
+                    self.lower_pattern(pattern, src);
                 }
             }
             Stmt::Const { pattern, value, .. } => {
@@ -137,7 +173,15 @@ impl AstLowerer {
                     self.lower_var(name, Some(value));
                     self.const_locals.insert(name.lexeme.clone());
                 } else {
-                    panic!("destructuring patterns not yet lowered");
+                    check_duplicate_bindings(pattern)
+                        .unwrap_or_else(|e| panic!("{}", e));
+                    let dst = self.fresh_reg();
+                    let src = self.lower_expr(value, dst);
+                    self.lower_pattern(pattern, src);
+                    // Mark all bound names as const
+                    for name in collect_bindings(pattern) {
+                        self.const_locals.insert(name.to_string());
+                    }
                 }
             }
             Stmt::Expr(expr) => {
@@ -163,11 +207,7 @@ impl AstLowerer {
                 iterable,
                 body,
             } => {
-                if let Pattern::Bind(variable) = pattern {
-                    self.lower_for(variable, iterable, body);
-                } else {
-                    panic!("destructuring patterns not yet lowered");
-                }
+                self.lower_for_with_pattern(pattern, iterable, body);
             }
             Stmt::Return(value) => self.lower_return(value.as_ref()),
             Stmt::Break => {
@@ -393,6 +433,130 @@ impl AstLowerer {
 
         self.locals.remove("__iter");
         self.locals.remove(&variable.lexeme);
+
+        self.break_label = prev_break;
+        self.next_label = prev_next;
+    }
+
+    /// Lower a pattern by destructuring `src_reg` into local bindings.
+    ///
+    /// For `Pattern::Bind`, inserts `src_reg` into `self.locals`.
+    /// For `Pattern::Wildcard`, does nothing.
+    /// For `Pattern::Tuple`, emits `LoadImm` + `GetIndex` for each element.
+    /// For `Pattern::Map`, emits `GetField` for each field, with optional rename.
+    fn lower_pattern(&mut self, pattern: &Pattern, src_reg: usize) {
+        match pattern {
+            Pattern::Bind(tok) => {
+                self.locals.insert(tok.lexeme.clone(), src_reg);
+            }
+            Pattern::Wildcard => {
+                // Discard — no binding needed.
+            }
+            Pattern::Tuple(patterns) => {
+                for (i, p) in patterns.iter().enumerate() {
+                    let const_idx = self.add_constant(Value::Int(i as i64));
+                    let int_reg = self.fresh_reg();
+                    self.emit(IrInstr::LoadImm { dst: int_reg, index: const_idx });
+                    let dst = self.fresh_reg();
+                    self.emit(IrInstr::GetIndex { dst, obj: src_reg, index: int_reg });
+                    self.lower_pattern(p, dst);
+                }
+            }
+            Pattern::Map(fields) => {
+                for (field, rename) in fields {
+                    let dst = self.fresh_reg();
+                    self.emit(IrInstr::GetField {
+                        dst,
+                        obj: src_reg,
+                        name: field.lexeme.clone(),
+                    });
+                    let binding_name = rename.as_ref().unwrap_or(field).lexeme.clone();
+                    self.locals.insert(binding_name, dst);
+                }
+            }
+        }
+    }
+
+    /// Lower a for loop with full pattern support.
+    ///
+    /// Handles `Pattern::Bind` (existing behaviour) and destructuring patterns.
+    fn lower_for_with_pattern(&mut self, pattern: &Pattern, iterable: &Expr, body: &Stmt) {
+        // For Bind patterns delegate to the existing lower_for helper.
+        if let Pattern::Bind(variable) = pattern {
+            self.lower_for(variable, iterable, body);
+            return;
+        }
+
+        // For destructuring patterns: check for duplicates once before the loop.
+        check_duplicate_bindings(pattern)
+            .unwrap_or_else(|e| panic!("{}", e));
+
+        let top_label = self.fresh_label();
+        let end_label = self.fresh_label();
+        let prev_break = self.break_label.take();
+        let prev_next = self.next_label.take();
+        self.break_label = Some(end_label);
+        self.next_label = Some(top_label);
+
+        // Evaluate iterable and call .iter()
+        let iterable_reg = self.fresh_reg();
+        self.lower_expr(iterable, iterable_reg);
+
+        let iter_reg = self.fresh_reg();
+        self.emit(IrInstr::GetField {
+            dst: iter_reg,
+            obj: iterable_reg,
+            name: "iter".to_string(),
+        });
+        self.emit(IrInstr::Call {
+            dst: iter_reg,
+            func: iter_reg,
+            args: vec![],
+        });
+        self.locals.insert("__iter".to_string(), iter_reg);
+
+        self.emit(IrInstr::Label { label: top_label });
+        let cond_reg = self.fresh_reg();
+        self.emit(IrInstr::GetField {
+            dst: cond_reg,
+            obj: iter_reg,
+            name: "hasNext".to_string(),
+        });
+        self.emit(IrInstr::Call {
+            dst: cond_reg,
+            func: cond_reg,
+            args: vec![],
+        });
+        self.emit(IrInstr::JumpIfFalse {
+            src: cond_reg,
+            target: end_label,
+        });
+
+        let elem_reg = self.fresh_reg();
+        self.emit(IrInstr::GetField {
+            dst: elem_reg,
+            obj: iter_reg,
+            name: "next".to_string(),
+        });
+        self.emit(IrInstr::Call {
+            dst: elem_reg,
+            func: elem_reg,
+            args: vec![],
+        });
+
+        // Destructure the element into locals.
+        self.lower_pattern(pattern, elem_reg);
+
+        self.lower_stmt(body);
+
+        self.emit(IrInstr::Jump { target: top_label });
+        self.emit(IrInstr::Label { label: end_label });
+
+        // Remove all bindings introduced by the pattern.
+        for name in collect_bindings(pattern) {
+            self.locals.remove(name);
+        }
+        self.locals.remove("__iter");
 
         self.break_label = prev_break;
         self.next_label = prev_next;
@@ -1957,5 +2121,254 @@ mod tests {
         let b = lowerer.add_constant(Value::Float(f32::NAN));
         assert_ne!(a, b);
         assert_eq!(lowerer.constants.len(), 2);
+    }
+
+    // ---- Pattern lowering tests -----------------------------------------------
+
+    /// Build a simple `pair` variable expression backed by register 0.
+    fn pair_expr() -> Expr {
+        Expr::Variable(make_token(TokenType::Identifier, "pair"))
+    }
+
+    #[test]
+    fn test_lower_tuple_pattern() {
+        // let (a, b) = pair
+        let mut lowerer = AstLowerer::new();
+        lowerer.locals.insert("pair".to_string(), 0);
+
+        let stmt = Stmt::Let {
+            annotations: vec![],
+            pattern: Pattern::Tuple(vec![
+                Pattern::Bind(make_token(TokenType::Identifier, "a")),
+                Pattern::Bind(make_token(TokenType::Identifier, "b")),
+            ]),
+            type_annot: None,
+            value: pair_expr(),
+        };
+        lowerer.lower(&[stmt]);
+
+        // Both bindings must be in locals.
+        assert!(lowerer.locals.contains_key("a"), "a should be in locals");
+        assert!(lowerer.locals.contains_key("b"), "b should be in locals");
+        // IR must contain GetIndex instructions for index 0 and 1.
+        let get_index_count = lowerer
+            .instrs
+            .iter()
+            .filter(|i| matches!(i, IrInstr::GetIndex { .. }))
+            .count();
+        assert_eq!(get_index_count, 2, "expected 2 GetIndex instructions");
+    }
+
+    #[test]
+    fn test_lower_wildcard_in_tuple() {
+        // let (x, _) = pair
+        let mut lowerer = AstLowerer::new();
+        lowerer.locals.insert("pair".to_string(), 0);
+
+        let stmt = Stmt::Let {
+            annotations: vec![],
+            pattern: Pattern::Tuple(vec![
+                Pattern::Bind(make_token(TokenType::Identifier, "x")),
+                Pattern::Wildcard,
+            ]),
+            type_annot: None,
+            value: pair_expr(),
+        };
+        lowerer.lower(&[stmt]);
+
+        assert!(lowerer.locals.contains_key("x"), "x should be in locals");
+        // _ should not introduce any binding.
+        assert_eq!(
+            lowerer.locals.keys().filter(|k| k.as_str() != "pair" && k.as_str() != "x").count(),
+            0,
+            "no extra bindings beyond pair and x"
+        );
+        // Still two GetIndex calls — one for x, one for _.
+        let get_index_count = lowerer
+            .instrs
+            .iter()
+            .filter(|i| matches!(i, IrInstr::GetIndex { .. }))
+            .count();
+        assert_eq!(get_index_count, 2);
+    }
+
+    #[test]
+    fn test_lower_map_pattern_shorthand() {
+        // let {name, health} = player
+        let mut lowerer = AstLowerer::new();
+        lowerer.locals.insert("player".to_string(), 0);
+
+        let stmt = Stmt::Let {
+            annotations: vec![],
+            pattern: Pattern::Map(vec![
+                (make_token(TokenType::Identifier, "name"), None),
+                (make_token(TokenType::Identifier, "health"), None),
+            ]),
+            type_annot: None,
+            value: Expr::Variable(make_token(TokenType::Identifier, "player")),
+        };
+        lowerer.lower(&[stmt]);
+
+        assert!(lowerer.locals.contains_key("name"));
+        assert!(lowerer.locals.contains_key("health"));
+        let get_field_count = lowerer
+            .instrs
+            .iter()
+            .filter(|i| matches!(i, IrInstr::GetField { .. }))
+            .count();
+        assert_eq!(get_field_count, 2);
+    }
+
+    #[test]
+    fn test_lower_map_pattern_rename() {
+        // let {name: n, health: hp} = player
+        let mut lowerer = AstLowerer::new();
+        lowerer.locals.insert("player".to_string(), 0);
+
+        let stmt = Stmt::Let {
+            annotations: vec![],
+            pattern: Pattern::Map(vec![
+                (
+                    make_token(TokenType::Identifier, "name"),
+                    Some(make_token(TokenType::Identifier, "n")),
+                ),
+                (
+                    make_token(TokenType::Identifier, "health"),
+                    Some(make_token(TokenType::Identifier, "hp")),
+                ),
+            ]),
+            type_annot: None,
+            value: Expr::Variable(make_token(TokenType::Identifier, "player")),
+        };
+        lowerer.lower(&[stmt]);
+
+        // Renamed bindings must be present.
+        assert!(lowerer.locals.contains_key("n"), "n should be in locals");
+        assert!(lowerer.locals.contains_key("hp"), "hp should be in locals");
+        // Original names must not be bound.
+        assert!(!lowerer.locals.contains_key("name"));
+        assert!(!lowerer.locals.contains_key("health"));
+    }
+
+    #[test]
+    fn test_lower_nested_tuple() {
+        // let (a, (b, c)) = nested
+        let mut lowerer = AstLowerer::new();
+        lowerer.locals.insert("nested".to_string(), 0);
+
+        let stmt = Stmt::Let {
+            annotations: vec![],
+            pattern: Pattern::Tuple(vec![
+                Pattern::Bind(make_token(TokenType::Identifier, "a")),
+                Pattern::Tuple(vec![
+                    Pattern::Bind(make_token(TokenType::Identifier, "b")),
+                    Pattern::Bind(make_token(TokenType::Identifier, "c")),
+                ]),
+            ]),
+            type_annot: None,
+            value: Expr::Variable(make_token(TokenType::Identifier, "nested")),
+        };
+        lowerer.lower(&[stmt]);
+
+        assert!(lowerer.locals.contains_key("a"));
+        assert!(lowerer.locals.contains_key("b"));
+        assert!(lowerer.locals.contains_key("c"));
+        // 3 GetIndex total: index 0 (-> a), index 0 (-> inner[0]=b), index 1 (-> inner[1]=c)
+        // plus index 1 for the inner tuple itself.
+        let get_index_count = lowerer
+            .instrs
+            .iter()
+            .filter(|i| matches!(i, IrInstr::GetIndex { .. }))
+            .count();
+        assert!(get_index_count >= 3, "expected at least 3 GetIndex instructions");
+    }
+
+    #[test]
+    #[should_panic(expected = "duplicate binding 'a' in destructuring pattern")]
+    fn test_duplicate_binding_error() {
+        // let (a, a) = pair — should panic with duplicate binding error
+        let mut lowerer = AstLowerer::new();
+        lowerer.locals.insert("pair".to_string(), 0);
+
+        let stmt = Stmt::Let {
+            annotations: vec![],
+            pattern: Pattern::Tuple(vec![
+                Pattern::Bind(make_token(TokenType::Identifier, "a")),
+                Pattern::Bind(make_token(TokenType::Identifier, "a")),
+            ]),
+            type_annot: None,
+            value: pair_expr(),
+        };
+        lowerer.lower(&[stmt]);
+    }
+
+    #[test]
+    fn test_for_tuple_pattern() {
+        // for (x, y) in items { }  — x and y available in body, removed after loop
+        let mut lowerer = AstLowerer::new();
+        // Provide a mock `items` local so lower_expr can resolve it.
+        lowerer.locals.insert("items".to_string(), 0);
+
+        let stmt = Stmt::For {
+            pattern: Pattern::Tuple(vec![
+                Pattern::Bind(make_token(TokenType::Identifier, "x")),
+                Pattern::Bind(make_token(TokenType::Identifier, "y")),
+            ]),
+            iterable: Expr::Variable(make_token(TokenType::Identifier, "items")),
+            body: Box::new(Stmt::Block(vec![])),
+        };
+        lowerer.lower(&[stmt]);
+
+        // After the loop, x and y must be removed from locals.
+        assert!(!lowerer.locals.contains_key("x"), "x should be removed after loop");
+        assert!(!lowerer.locals.contains_key("y"), "y should be removed after loop");
+        // IR should contain GetIndex for destructuring each element.
+        let get_index_count = lowerer
+            .instrs
+            .iter()
+            .filter(|i| matches!(i, IrInstr::GetIndex { .. }))
+            .count();
+        assert!(get_index_count >= 2, "expected at least 2 GetIndex per iteration");
+    }
+
+    #[test]
+    fn test_destructuring_end_to_end() {
+        // Verify that a complete script with tuple and map destructuring lowers
+        // without panicking and produces non-empty IR.
+        //
+        // Equivalent Ink source:
+        //   let (a, b) = pair
+        //   let {x} = obj
+        //
+        // We construct the AST directly.
+        let mut lowerer = AstLowerer::new();
+        lowerer.locals.insert("pair".to_string(), 0);
+        lowerer.locals.insert("obj".to_string(), 1);
+
+        let stmts = vec![
+            Stmt::Let {
+                annotations: vec![],
+                pattern: Pattern::Tuple(vec![
+                    Pattern::Bind(make_token(TokenType::Identifier, "a")),
+                    Pattern::Bind(make_token(TokenType::Identifier, "b")),
+                ]),
+                type_annot: None,
+                value: pair_expr(),
+            },
+            Stmt::Let {
+                annotations: vec![],
+                pattern: Pattern::Map(vec![
+                    (make_token(TokenType::Identifier, "x"), None),
+                ]),
+                type_annot: None,
+                value: Expr::Variable(make_token(TokenType::Identifier, "obj")),
+            },
+        ];
+
+        let result = lowerer.lower(&stmts);
+        assert!(!result.instrs.is_empty(), "lowered result should not be empty");
+        assert!(lowerer.locals.contains_key("a"));
+        assert!(lowerer.locals.contains_key("b"));
+        assert!(lowerer.locals.contains_key("x"));
     }
 }
