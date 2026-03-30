@@ -483,11 +483,18 @@ fn render(f: &mut Frame, app: &SearchApp) {
 fn render_search_bar(f: &mut Frame, app: &SearchApp, area: Rect) {
     let style = Style::default();
     let input = Paragraph::new(Line::from(vec![
-        Span::styled(" Search: ", style.bold().fg(Color::Cyan)),
+        Span::styled(" ", style.fg(Color::DarkGray)),
+        Span::styled("🔍 ", style.fg(Color::Cyan)),
         Span::styled(&app.query, style.fg(Color::White)),
-        Span::styled("█", style.fg(Color::Cyan)),
+        Span::styled("▎", style.fg(Color::Cyan)),
     ]))
-    .block(Block::default().borders(Borders::BOTTOM).style(style));
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan))
+            .title(" Search ")
+            .title_style(Style::default().bold().fg(Color::Cyan)),
+    );
 
     f.render_widget(input, area);
 }
