@@ -23,7 +23,7 @@ impl Context {
             project_dir,
             manifest: None,
             lockfile: None,
-            registry_url: "https://inklang.io".to_string(),
+            registry_url: "https://lectern.inklang.org".to_string(),
             rc: None,
             verbose,
             quiet,

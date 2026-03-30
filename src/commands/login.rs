@@ -18,7 +18,7 @@ impl Command for Login {
     async fn execute(&self, _ctx: &Context) -> Result<()> {
         let registry_url = self.registry.as_ref()
             .map(|s| s.as_str())
-            .unwrap_or("https://inklang.io");
+            .unwrap_or("https://lectern.inklang.org");
 
         // 1. Generate Ed25519 keypair
         let (private_key_b64, key_id) = AuthContext::generate_keypair()?;
