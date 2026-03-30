@@ -4,7 +4,7 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -155,6 +155,9 @@ impl Command for Search {
                 if event::poll(std::time::Duration::from_millis(50)).unwrap_or(false) {
                     match event::read() {
                         Ok(Event::Key(key)) => {
+                            if key.kind != KeyEventKind::Press {
+                                continue;
+                            }
                             if tx_key.send(AppEvent::Key(key)).await.is_err() {
                                 break;
                             }
