@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::collections::BTreeMap;
 use std::io::IsTerminal;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::cache::CacheManifest;
@@ -224,7 +224,7 @@ fn save_cache_manifest(manifest: &CacheManifest, path: &std::path::Path) -> Resu
         .map_err(|e| QuillError::io_error("failed to write cache manifest", e))
 }
 
-async fn load_cached_index(cache_dir: &PathBuf) -> Result<crate::registry::index::RegistryIndex> {
+async fn load_cached_index(cache_dir: &Path) -> Result<crate::registry::index::RegistryIndex> {
     let index_path = cache_dir.join("index.json.gz");
     if !index_path.exists() {
         return Err(QuillError::RegistryAuth {
