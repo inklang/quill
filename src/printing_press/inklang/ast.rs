@@ -46,6 +46,20 @@ pub struct AnnotationField {
     pub default_value: Option<Expr>,
 }
 
+/// A destructuring pattern used in let/const/for bindings.
+#[derive(Debug, Clone)]
+pub enum Pattern {
+    /// Simple name binding: `x`
+    Bind(Token),
+    /// Wildcard: `_` — discards the value
+    Wildcard,
+    /// Tuple/list positional: `(a, b, c)`
+    Tuple(Vec<Pattern>),
+    /// Map field binding: `{name}` or `{name: renamed}`
+    /// Each entry is (field_name_token, optional_rename_token).
+    Map(Vec<(Token, Option<Token>)>),
+}
+
 /// Parameter in an event declaration.
 #[derive(Debug, Clone)]
 pub struct EventParam {
@@ -171,13 +185,13 @@ pub enum Stmt {
     /// Let binding: let x = 5
     Let {
         annotations: Vec<Expr>,
-        name: Token,
+        pattern: Pattern,
         type_annot: Option<Token>,
         value: Expr,
     },
     /// Const binding: const x = 5
     Const {
-        name: Token,
+        pattern: Pattern,
         type_annot: Option<Token>,
         value: Expr,
     },
@@ -196,7 +210,7 @@ pub enum Stmt {
     },
     /// For range loop: for i in 0..10 { ... }
     For {
-        variable: Token,
+        pattern: Pattern,
         iterable: Expr,
         body: Box<Stmt>,
     },
@@ -432,12 +446,12 @@ mod tests {
     fn test_stmt_let() {
         let stmt = Stmt::Let {
             annotations: vec![],
-            name: Token {
+            pattern: Pattern::Bind(Token {
                 typ: TokenType::Identifier,
                 lexeme: "x".into(),
                 line: 1,
                 column: 0,
-            },
+            }),
             type_annot: None,
             value: Expr::Literal(Value::Int(5)),
         };
@@ -447,12 +461,12 @@ mod tests {
     #[test]
     fn test_stmt_const() {
         let stmt = Stmt::Const {
-            name: Token {
+            pattern: Pattern::Bind(Token {
                 typ: TokenType::Identifier,
                 lexeme: "PI".into(),
                 line: 1,
                 column: 0,
-            },
+            }),
             type_annot: None,
             value: Expr::Literal(Value::Double(3.14)),
         };
@@ -487,12 +501,12 @@ mod tests {
     #[test]
     fn test_stmt_for() {
         let stmt = Stmt::For {
-            variable: Token {
+            pattern: Pattern::Bind(Token {
                 typ: TokenType::Identifier,
                 lexeme: "i".into(),
                 line: 1,
                 column: 4,
-            },
+            }),
             iterable: Expr::Variable(Token {
                 typ: TokenType::Identifier,
                 lexeme: "items".into(),

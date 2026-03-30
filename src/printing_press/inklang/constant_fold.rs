@@ -2,7 +2,7 @@
 //!
 //! Evaluates constant expressions at compile time when all operands are literals.
 
-use super::ast::{Expr, GrammarRuleBody, Stmt};
+use super::ast::{Expr, GrammarRuleBody, Pattern, Stmt};
 use super::token::{Token, TokenType};
 use super::value::Value;
 
@@ -26,21 +26,21 @@ impl ConstantFolder {
         match stmt {
             Stmt::Let {
                 annotations,
-                name,
+                pattern,
                 type_annot,
                 value,
             } => Stmt::Let {
                 annotations,
-                name,
+                pattern,
                 type_annot,
                 value: self.fold_expr(value),
             },
             Stmt::Const {
-                name,
+                pattern,
                 type_annot,
                 value,
             } => Stmt::Const {
-                name,
+                pattern,
                 type_annot,
                 value: self.fold_expr(value),
             },
@@ -79,11 +79,11 @@ impl ConstantFolder {
                 is_async,
             },
             Stmt::For {
-                variable,
+                pattern,
                 iterable,
                 body,
             } => Stmt::For {
-                variable,
+                pattern,
                 iterable: self.fold_expr(iterable),
                 body: Box::new(self.fold_stmt(*body)),
             },
@@ -412,7 +412,7 @@ mod tests {
         let mut folder = ConstantFolder::new();
         let stmt = Stmt::Let {
             annotations: vec![],
-            name: make_token(TokenType::Identifier, "x"),
+            pattern: Pattern::Bind(make_token(TokenType::Identifier, "x")),
             type_annot: None,
             value: plus_expr(10, 5),
         };
@@ -442,7 +442,7 @@ mod tests {
         let stmt = Stmt::Block(vec![
             Stmt::Let {
                 annotations: vec![],
-                name: make_token(TokenType::Identifier, "x"),
+                pattern: Pattern::Bind(make_token(TokenType::Identifier, "x")),
                 type_annot: None,
                 value: plus_expr(1, 2),
             },

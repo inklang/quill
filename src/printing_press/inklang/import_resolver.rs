@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use super::ast::Stmt;
+use super::ast::{Pattern, Stmt};
 use super::grammar::MergedGrammar;
 use super::parser::Parser;
 use super::CompileError;
@@ -149,8 +149,14 @@ fn resolve_path(base_dir: &Path, import_path: &str, line: usize) -> Result<PathB
 fn declaration_name(stmt: &Stmt) -> Option<&str> {
     match stmt {
         Stmt::Fn { name, .. } => Some(&name.lexeme),
-        Stmt::Let { name, .. } => Some(&name.lexeme),
-        Stmt::Const { name, .. } => Some(&name.lexeme),
+        Stmt::Let { pattern: Pattern::Bind(name), .. } => Some(&name.lexeme),
+        Stmt::Const { pattern: Pattern::Bind(name), .. } => Some(&name.lexeme),
+        // Non-Bind patterns (Tuple, Map, Wildcard) fall through to the `_ => None`
+        // arm and are invisible to this function.  This is a known limitation:
+        // top-level destructuring let/const statements (e.g. `let (a, b) = x`)
+        // are not supported by the selective import system — `import { a } from
+        // "./file"` will not find `a` even if the file contains `let (a, b) = x`.
+        // Only simple `let a = …` / `const a = …` bindings are selectable.
         Stmt::Class { name, .. } => Some(&name.lexeme),
         Stmt::Enum { name, .. } => Some(&name.lexeme),
         Stmt::GrammarDecl { name, .. } => Some(name),
