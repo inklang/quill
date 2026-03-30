@@ -221,3 +221,32 @@ pub fn compile_entry(
 
     Ok(SerialScript::from_chunk(name, &chunk))
 }
+
+/// Parse an entry point file and resolve all file imports, returning the merged AST.
+/// Stops before lowering — useful for export collection and static analysis.
+pub fn resolve_ast(
+    entry_path: &std::path::Path,
+    grammar: Option<&MergedGrammar>,
+) -> Result<Vec<ast::Stmt>, CompileError> {
+    let source = std::fs::read_to_string(entry_path)
+        .map_err(|e| CompileError::Other(
+            format!("could not read '{}': {}", entry_path.display(), e)))?;
+
+    let tokens = lexer::tokenize(&source);
+    let source_lines: Vec<String> = source.lines().map(|l| l.to_string()).collect();
+
+    let parsed = Parser::new(tokens, grammar)
+        .parse()
+        .map_err(|e| {
+            let span = e.span().unwrap_or(Span { line: 1, column: 1 });
+            CompileError::Parsing {
+                message: e.to_string(),
+                span,
+                source_lines,
+            }
+        })?;
+
+    let base_dir = entry_path.parent().unwrap_or(std::path::Path::new("."));
+    let mut resolver = import_resolver::ImportResolver::new(grammar.cloned());
+    resolver.resolve(&parsed, base_dir)
+}
