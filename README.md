@@ -25,69 +25,61 @@ quill run
 ### Project setup
 
 ```bash
-quill new <name>             # create a new script project (interactive template picker)
-quill new <name> --package   # create a publishable grammar package
-quill init                   # create ink-package.toml in an existing directory
+quill new <name>                # create a new project (--kind script|library)
 ```
 
 ### Dependencies
 
 ```bash
-quill add <package>           # add a package and install it
-quill remove <package>        # remove a package (alias: uninstall)
-quill install                 # install all dependencies from ink-package.toml
-quill update [packages...]    # update dependencies to latest matching versions
-quill outdated                # check for packages with newer versions
-quill outdated --json         # output outdated packages as JSON
-quill why <package>          # show why a package is installed
-quill ls                      # list installed packages
-quill clean                   # remove the .quill-cache/ directory
+quill add <package>             # add a dependency
+quill remove <package>          # remove a dependency
+quill install                   # install all dependencies
+quill update [packages...]      # update dependencies
+quill outdated                  # check for newer versions
+quill why <package>             # show why a package is installed
+quill ls                        # list installed packages
 ```
 
 ### Building
 
 ```bash
-quill build                   # compile grammar and/or Ink scripts
-quill build --full            # force full recompilation
-quill check                   # check grammar and scripts for errors without building
-quill watch                   # watch for changes and rebuild automatically
-quill run                     # build, deploy, and run a managed Paper dev server
-quill run --no-watch          # start without file watching
+quill build                     # compile grammar and Ink scripts
+quill build --full              # force full recompilation
+quill compile                   # compile Ink scripts
+quill check                     # check for errors without building
+quill watch                     # watch for changes and rebuild
+quill run                       # build, deploy, and run a Paper dev server
+quill run --no-watch            # start without file watching
+quill pack                      # create a package tarball
+quill clean                     # clean build artifacts
 ```
 
 ### Registry
 
 ```bash
-quill login                   # generate a keypair and register with the registry
-quill login --token <tok> --username <user>   # token-only login (CI environments)
-quill logout                  # remove your keypair from ~/.quillrc
-quill publish                 # publish your package to the registry
-quill unpublish [version]     # remove a published package version
-quill search <query>          # search the registry for packages
-quill info <pkg>              # show details about a package
+quill login                     # login to the registry
+quill login --token <tok> --username <user>  # token-only login (CI)
+quill logout                    # remove credentials
+quill publish                   # publish your package
+quill unpublish [version]       # remove a published version
+quill search <query>            # search the registry
+quill info <package>            # show package details
 ```
 
 ### Cache
 
 ```bash
-quill cache-info              # show build cache info
-quill cache-info ls           # list cached package tarballs
-quill cache-info clean        # remove build cache
+quill cache info                # show cache info
+quill cache ls                  # list cached packages
+quill cache clean               # clean cache
 ```
 
 ### Diagnostics
 
 ```bash
-quill doctor                  # run diagnostics and check for common issues
-```
-
-### Shell completions
-
-```bash
-# Install completions for your shell
-quill completions bash >> ~/.bashrc       # bash
-quill completions zsh  > ~/.zsh/completion/_quill   # zsh
-quill completions fish > ~/.config/fish/completions/quill.fish  # fish
+quill audit                     # audit for vulnerabilities
+quill doctor                    # run diagnostics
+quill completions [shell]       # generate shell completions
 ```
 
 ## Lockfile
@@ -111,7 +103,7 @@ Or set it in `~/.quillrc`:
 ## Development
 
 ```bash
-cargo build                   # debug build
-cargo build --release         # optimized build
-cargo test                    # run tests
+cargo build                     # debug build
+cargo build --release           # optimized build
+cargo test                      # run tests
 ```
