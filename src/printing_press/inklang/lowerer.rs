@@ -7,7 +7,7 @@
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
-use super::ast::{Expr, Param, Stmt};
+use super::ast::{Expr, Param, Pattern, Stmt};
 use super::ir::{DefaultValueInfo, IrInstr, IrLabel, MethodInfo, RuleBodyIr};
 use super::token::TokenType;
 use super::value::Value;
@@ -124,11 +124,20 @@ impl AstLowerer {
     /// Lower a statement.
     fn lower_stmt(&mut self, stmt: &Stmt) {
         match stmt {
-            Stmt::Let { name, value, .. } => self.lower_var(name, Some(value)),
-            Stmt::Const { name, value, .. } => {
-                self.lower_var(name, Some(value));
-                if let Some(_reg) = self.locals.get(&name.lexeme) {
+            Stmt::Let { pattern, value, .. } => {
+                if let Pattern::Bind(name) = pattern {
+                    self.lower_var(name, Some(value));
+                } else {
+                    // Full pattern support added in Chunk 3
+                    panic!("destructuring patterns not yet lowered");
+                }
+            }
+            Stmt::Const { pattern, value, .. } => {
+                if let Pattern::Bind(name) = pattern {
+                    self.lower_var(name, Some(value));
                     self.const_locals.insert(name.lexeme.clone());
+                } else {
+                    panic!("destructuring patterns not yet lowered");
                 }
             }
             Stmt::Expr(expr) => {
@@ -150,10 +159,16 @@ impl AstLowerer {
             } => self.lower_if(condition, then_branch, else_branch.as_deref()),
             Stmt::While { condition, body } => self.lower_while(condition, body),
             Stmt::For {
-                variable,
+                pattern,
                 iterable,
                 body,
-            } => self.lower_for(variable, iterable, body),
+            } => {
+                if let Pattern::Bind(variable) = pattern {
+                    self.lower_for(variable, iterable, body);
+                } else {
+                    panic!("destructuring patterns not yet lowered");
+                }
+            }
             Stmt::Return(value) => self.lower_return(value.as_ref()),
             Stmt::Break => {
                 let target = self.break_label.expect("break outside loop");
@@ -505,7 +520,7 @@ impl AstLowerer {
                             default_values,
                         },
                     );
-                } else if let Stmt::Let { name: field_name, .. } = member {
+                } else if let Stmt::Let { pattern: Pattern::Bind(field_name), .. } = member {
                     field_declarations.push(member.clone());
                     field_names.insert(field_name.lexeme.clone());
                 }
@@ -520,7 +535,7 @@ impl AstLowerer {
             init_lowerer.reg_counter = Cell::new(1);
 
             for field in &field_declarations {
-                if let Stmt::Let { name: field_name, value, .. } = field {
+                if let Stmt::Let { pattern: Pattern::Bind(field_name), value, .. } = field {
                     let field_name_str = field_name.lexeme.clone();
                     let value_expr = value.clone();
                     let value_dst = init_lowerer.fresh_reg();
@@ -1672,7 +1687,7 @@ mod tests {
         let mut lowerer = AstLowerer::new();
         let stmt = Stmt::Let {
             annotations: vec![],
-            name: make_token(TokenType::Identifier, "x"),
+            pattern: Pattern::Bind(make_token(TokenType::Identifier, "x")),
             type_annot: None,
             value: Expr::Literal(Value::Int(5)),
         };
@@ -1712,7 +1727,7 @@ mod tests {
         let block = Stmt::Block(vec![
             Stmt::Let {
                 annotations: vec![],
-                name: make_token(TokenType::Identifier, "x"),
+                pattern: Pattern::Bind(make_token(TokenType::Identifier, "x")),
                 type_annot: None,
                 value: Expr::Literal(Value::Int(1)),
             },
@@ -1758,7 +1773,7 @@ mod tests {
         let mut lowerer = AstLowerer::new();
         lowerer.locals.insert("items".to_string(), 0); // mock iterable
         let stmt = Stmt::For {
-            variable: make_token(TokenType::Identifier, "i"),
+            pattern: Pattern::Bind(make_token(TokenType::Identifier, "i")),
             iterable: Expr::Variable(make_token(TokenType::Identifier, "items")),
             body: Box::new(Stmt::Block(vec![])),
         };

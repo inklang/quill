@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 
 use super::ast::{
-    ConfigField, EnumVariant, EventParam, Expr, GrammarRuleBody, Param, Stmt,
+    ConfigField, EnumVariant, EventParam, Expr, GrammarRuleBody, Param, Pattern, Stmt,
     TableField,
 };
 use super::chunk::CstNodeEntry;
@@ -257,14 +257,14 @@ impl<'a> Parser<'a> {
         }
         if keyword.typ == TokenType::KwConst {
             Ok(Stmt::Const {
-                name,
+                pattern: Pattern::Bind(name),
                 type_annot,
                 value: value.unwrap_or(Expr::Literal(Value::Null)),
             })
         } else {
             Ok(Stmt::Let {
                 annotations,
-                name,
+                pattern: Pattern::Bind(name),
                 type_annot,
                 value: value.unwrap_or(Expr::Literal(Value::Null)),
             })
@@ -424,7 +424,7 @@ impl<'a> Parser<'a> {
         let iterable = self.parse_expression(Precedence::None)?;
         let body = self.parse_block()?;
         Ok(Stmt::For {
-            variable,
+            pattern: Pattern::Bind(variable),
             iterable,
             body: Box::new(body),
         })
@@ -2057,7 +2057,7 @@ mod tests {
     #[test]
     fn test_parse_let_statement() {
         let stmts = parse("let x = 5");
-        assert!(matches!(&stmts[0], Stmt::Let { name, .. } if name.lexeme == "x"));
+        assert!(matches!(&stmts[0], Stmt::Let { pattern: Pattern::Bind(name), .. } if name.lexeme == "x"));
     }
 
     #[test]
@@ -2069,7 +2069,7 @@ mod tests {
     #[test]
     fn test_parse_const_statement() {
         let stmts = parse("const PI = 3.14");
-        assert!(matches!(&stmts[0], Stmt::Const { name, .. } if name.lexeme == "PI"));
+        assert!(matches!(&stmts[0], Stmt::Const { pattern: Pattern::Bind(name), .. } if name.lexeme == "PI"));
     }
 
     #[test]
@@ -2114,7 +2114,7 @@ mod tests {
     #[test]
     fn test_parse_for_statement() {
         let stmts = parse("for i in 0..10 { i }");
-        assert!(matches!(&stmts[0], Stmt::For { variable, .. } if variable.lexeme == "i"));
+        assert!(matches!(&stmts[0], Stmt::For { pattern: Pattern::Bind(variable), .. } if variable.lexeme == "i"));
     }
 
     #[test]
