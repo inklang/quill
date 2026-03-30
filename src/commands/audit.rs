@@ -50,6 +50,7 @@ struct VulnerabilityIssue {
     severity: String,
     summary: String,
     references: Vec<String>,
+    package: Option<String>,
 }
 
 async fn scan_bytecode(ctx: &Context) -> Result<Vec<VulnerabilityIssue>> {
@@ -79,6 +80,7 @@ async fn scan_bytecode(ctx: &Context) -> Result<Vec<VulnerabilityIssue>> {
                             v.operation, v.location
                         ),
                         references: vec![],
+                        package: None,
                     });
                 }
             }
@@ -117,6 +119,7 @@ async fn scan_dependencies(ctx: &Context) -> Result<Vec<VulnerabilityIssue>> {
                         severity: severity_str.to_string(),
                         summary: vuln.summary,
                         references: vuln.references,
+                        package: Some(name.clone()),
                     });
                 }
             }
@@ -146,4 +149,21 @@ fn find_inkc_files(dir: &Path, results: &mut Vec<PathBuf>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vulnerability_issue_has_package_field() {
+        let issue = VulnerabilityIssue {
+            id: "CVE-2024-1234".to_string(),
+            severity: "High".to_string(),
+            summary: "test".to_string(),
+            references: vec![],
+            package: Some("my-pkg".to_string()),
+        };
+        assert_eq!(issue.package, Some("my-pkg".to_string()));
+    }
 }
