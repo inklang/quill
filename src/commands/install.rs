@@ -100,7 +100,7 @@ impl Command for Install {
                 // Download package
                 std::fs::create_dir_all(&package_cache_dir)
                     .map_err(|e| QuillError::io_error("failed to create cache directory", e))?;
-                client.download_package(&resolved_pkg.url, &tarball_path).await?;
+                client.download_package(&resolved_pkg.url, &tarball_path, None).await?;
             }
 
             // Extract to project or cache

@@ -3,6 +3,8 @@ use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::path::Path;
 
+use indicatif::ProgressBar;
+
 use crate::exports::PackageExports;
 
 use flate2::read::GzDecoder;
@@ -249,8 +251,16 @@ impl RegistryClient {
         Ok(())
     }
 
-    /// Download a package from a URL
-    pub async fn download_package(&self, url: &str, dest: &Path) -> Result<()> {
+    /// Download a package from a URL, streaming chunks into dest.
+    /// Pass a ProgressBar to show byte progress; pass None for silent download.
+    pub async fn download_package(
+        &self,
+        url: &str,
+        dest: &Path,
+        pb: Option<&ProgressBar>,
+    ) -> Result<()> {
+        use futures_util::StreamExt;
+
         let response = self
             .client
             .get(url)
@@ -264,25 +274,31 @@ impl RegistryClient {
         if !response.status().is_success() {
             return Err(QuillError::RegistryRequest {
                 url: url.to_string(),
-                source: reqwest::Error::from(response.error_for_status_ref().err().unwrap()),
+                source: response.error_for_status_ref().unwrap_err(),
             });
+        }
+
+        if let (Some(pb), Some(len)) = (pb, response.content_length()) {
+            pb.set_length(len);
         }
 
         let mut file = TokioFile::create(dest)
             .await
             .map_err(|e| QuillError::io_error("failed to create destination file", e))?;
 
-        let bytes = response
-            .bytes()
-            .await
-            .map_err(|e| QuillError::RegistryRequest {
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| QuillError::RegistryRequest {
                 url: url.to_string(),
                 source: e,
             })?;
-
-        file.write_all(&bytes)
-            .await
-            .map_err(|e| QuillError::io_error("failed to write file", e))?;
+            file.write_all(&chunk)
+                .await
+                .map_err(|e| QuillError::io_error("failed to write chunk", e))?;
+            if let Some(pb) = pb {
+                pb.inc(chunk.len() as u64);
+            }
+        }
 
         Ok(())
     }
@@ -304,4 +320,42 @@ pub struct PackageInfo {
     pub package_type: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exports: Option<PackageExports>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use tempfile::tempdir;
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    #[tokio::test]
+    async fn test_download_package_streams_to_file() {
+        let server = MockServer::start().await;
+        let body = b"fake tarball content";
+
+        Mock::given(method("GET"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(body.as_slice())
+                    .append_header("content-length", body.len().to_string()),
+            )
+            .mount(&server)
+            .await;
+
+        let dir = tempdir().unwrap();
+        let dest = dir.path().join("package.tar.gz");
+        // RegistryClient::new stores a base URL but download_package uses the passed URL
+        // directly — construct with an empty string to make this clear.
+        let client = RegistryClient::new("");
+
+        client
+            .download_package(&format!("{}/pkg.tar.gz", server.uri()), &dest, None)
+            .await
+            .unwrap();
+
+        let written = std::fs::read(&dest).unwrap();
+        assert_eq!(written, body);
+    }
 }
